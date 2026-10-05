@@ -29,7 +29,7 @@ const json = (body, status = 200) =>
   });
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
     if (request.method === 'OPTIONS') {
@@ -38,7 +38,7 @@ export default {
 
     if (url.pathname.endsWith('/ai')) {
       if (request.method !== 'POST') return json({ error: 'Método no permitido' }, 405);
-      return handleAI(request);
+      return handleAI(request, env);
     }
 
     if (request.method !== 'GET') return json({ error: 'Método no permitido' }, 405);
@@ -84,8 +84,10 @@ async function handleIntervals(incoming) {
  *    POST /ai   body = payload de /v1/messages
  *    La key vive en el secreto ANTHROPIC_API_KEY (nunca en el repo).
  * ---------------------------------------------------------------- */
-async function handleAI(request) {
-  const apiKey = typeof ANTHROPIC_API_KEY !== 'undefined' ? ANTHROPIC_API_KEY : '';
+async function handleAI(request, env) {
+  // OJO: en workers con sintaxis de ES module los secretos llegan en `env`,
+  // NO como variables globales (eso solo ocurre en el formato service worker).
+  const apiKey = (env && env.ANTHROPIC_API_KEY) || '';
   if (!apiKey) {
     return json({ error: 'Falta el secreto ANTHROPIC_API_KEY. Ejecuta: npx wrangler secret put ANTHROPIC_API_KEY' }, 500);
   }
