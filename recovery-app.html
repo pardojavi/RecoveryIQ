@@ -1200,9 +1200,15 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 //   'https://tudominio.com/proxy.php'
 var MY_PROXY = 'https://recoveryiq-proxy.ecovery.workers.dev';
 
-// Proxy de Claude (proxy-ai.php). Déjalo a null hasta subirlo.
-var MY_AI_PROXY = null;
+// Proxy de IA. Apunta a la ruta /ai del mismo worker, que usa Workers AI
+// (GRATIS: 10.000 neurons/día en el plan Free, sin tarjeta). Ver README §4.4.
+// Si en su lugar alojas proxy-ai.php en un hosting con PHP, pon su URL:
+//   var MY_AI_PROXY = 'https://tudominio.com/proxy-ai.php';
+// Si lo dejas a null, la app explica cómo activarlo y el resto sigue funcionando.
+var MY_AI_PROXY = 'https://recoveryiq-proxy.ecovery.workers.dev/ai';
 
+// Solo se usa si el worker tiene el secreto ANTHROPIC_API_KEY (API de pago);
+// con Workers AI el worker lo ignora.
 var CLAUDE_MODEL = 'claude-sonnet-4-20250514';
 var APP_VERSION  = '3.0.0';
 
@@ -2217,12 +2223,12 @@ function sendChat(text){
 
   if (!MY_AI_PROXY) {
     var cfgHtml = '&#129504; El chat con IA todav&#237;a no est&#225; configurado.<br><br>' +
-                  'Sube <b>proxy-ai.php</b> a tu servidor y pon su ruta en <b>MY_AI_PROXY</b> ' +
-                  '(dentro del &#60;script&#62; del HTML) para activar a RecoveryIQ IA.<br><br>' +
+                  'Pon la URL de tu proxy de IA en <b>MY_AI_PROXY</b> (dentro del &#60;script&#62; del HTML):<br>' +
+                  'la ruta <b>/ai</b> de tu worker de Cloudflare, o <b>proxy-ai.php</b> si alojas PHP.<br><br>' +
                   'Mientras tanto, el resto de la app funciona con normalidad.';
     var cfgPlain = '🧠 El chat con IA todavía no está configurado. ' +
-                   'Sube proxy-ai.php a tu servidor y pon su ruta en MY_AI_PROXY ' +
-                   '(dentro del bloque de script del HTML) para activar a RecoveryIQ IA. ' +
+                   'Pon la URL de tu proxy de IA en MY_AI_PROXY (dentro del bloque de script del HTML): ' +
+                   'la ruta /ai de tu worker de Cloudflare, o proxy-ai.php si alojas PHP. ' +
                    'Mientras tanto, el resto de la app funciona con normalidad.';
     addMsg('ai', cfgHtml);
     S.chatHistory.push({ role:'assistant', content:cfgPlain });
@@ -2258,7 +2264,7 @@ function sendChat(text){
     trimHistory();
   }).catch(function(e){
     var m = 'No pude responder ahora mismo. Int&#233;ntalo de nuevo en unos segundos.';
-    if (String(e.message).indexOf('HTTP 401') >= 0) m = 'La API key de Anthropic no es v&#225;lida. Rev&#237;cala en proxy-ai.php.';
+    if (String(e.message).indexOf('HTTP 401') >= 0) m = 'La API key de IA no es v&#225;lida. Rev&#237;cala en tu proxy (o en el secreto del worker).';
     if (String(e.message).indexOf('HTTP 429') >= 0) m = 'Has superado el l&#237;mite de peticiones de la API. Espera un momento.';
     updateMsg(typing, '&#9888;&#65039; ' + m);
   });

@@ -36,7 +36,7 @@ No hay build, ni npm, ni framework: se sube tal cual.
 | Modo demo | ✅ Sí |
 | Instalar como PWA en el iPhone | ✅ Sí |
 | Conectar con tu cuenta de **Intervals.icu** | ✅ Sí, vía `worker.js` |
-| Chat con **IA** | ⏳ Falta `wrangler secret put ANTHROPIC_API_KEY` |
+| Chat con **IA** | ✅ Sí, **gratis** con Workers AI (§4.4) |
 
 **Esta app ya está desplegada**: `MY_PROXY` apunta a
 `https://recoveryiq-proxy.ecovery.workers.dev`, un Cloudflare Worker creado a
@@ -108,7 +108,11 @@ Si `MY_PROXY` no funciona, la app intenta un fallback público
 (`api.allorigins.win`) que **no** reenvía tu API key, así que fallará casi siempre.
 El proxy propio es, por tanto, imprescindible.
 
-### 4.2 `MY_AI_PROXY` (opcional — chat con IA)
+### 4.2 `MY_AI_PROXY` — API de Anthropic (opcional y de pago)
+
+> ⚠️ **La API de Anthropic no tiene nivel gratuito.** Si no quieres gastarte
+> nada, usa **Workers AI** (§4.4) — es gratis y es lo que ya viene configurado
+> en esta app.
 
 1. Copia la plantilla y pon ahí tu key:
    ```bash
@@ -144,19 +148,65 @@ Mientras `MY_AI_PROXY` sea `null`, el chat muestra un mensaje de configuración 
 3. **Configura la app** al principio del `<script>` de `recovery-app.html`:
    ```js
    var MY_PROXY    = 'https://recoveryiq-proxy.tu-subdomino.workers.dev';
-   var MY_AI_PROXY = null;   // o '.../ai' si activas el chat
+   var MY_AI_PROXY = 'https://recoveryiq-proxy.tu-subdomino.workers.dev/ai';
    ```
 
-4. *(Opcional, chat IA)*
+4. *(Opcional)* Si prefieres la API de pago de Claude en lugar de Workers AI:
    ```bash
    wrangler secret put ANTHROPIC_API_KEY
    ```
-   y `var MY_AI_PROXY = 'https://recoveryiq-proxy.tu-subdomino.workers.dev/ai';`
+   El worker le da prioridad automáticamente, sin tocar nada más.
 
 `worker.js` replica la lógica de `proxy.php`: mismos parámetros `url` y `auth`,
-misma whitelist estricta a `https://intervals.icu/api/`, más la ruta `/ai` para
-Claude. La API key de Anthropic vive en un **secreto** de Cloudflare, nunca en
-el repo.
+misma whitelist estricta a `https://intervals.icu/api/`, más la ruta `/ai`.
+La API key de Anthropic vive en un **secreto** de Cloudflare, nunca en el repo.
+
+### 4.4 Chat IA **gratuito** con Workers AI (el que usa esta app)
+
+La API de Anthropic es de pago, así que por defecto el worker no la usa: la
+ruta `/ai` llama a **Workers AI**, que ya viene incluido en tu cuenta de
+Cloudflare.
+
+| | |
+|---|---|
+| **Coste** | **0 €** — 10.000 *neurons*/día incluidos en el plan Free |
+| **Tarjeta** | No hace falta. Y en plan Free **no se puede facturar de más**: si te pasas de la cuota, las llamadas fallan |
+| **Reset** | Diario, a las 00:00 UTC |
+| **Modelo por defecto** | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
+
+Estimación de mensajes al día gratis (800 tokens de entrada + 300 de salida
+por mensaje):
+
+| Modelo | Msg/día |
+|---|---|
+| `@cf/qwen/qwen3-30b-a3b-fp8` | ~778 |
+| `@cf/meta/llama-3.1-8b-instruct-fp8` | ~529 |
+| `@cf/mistralai/mistral-small-3.1-24b-instruct` | ~245 |
+| `@cf/meta/llama-3.3-70b-instruct-fp8-fast` ← por defecto | ~120 |
+
+Para cambiar de modelo, edita `WORKERS_AI_MODEL` en `worker.js` y vuelve a
+desplegar (`wrangler deploy`). El binding ya está en `wrangler.toml`:
+
+```toml
+[ai]
+binding = "AI"
+```
+
+Y en `recovery-app.html`:
+
+```js
+var MY_AI_PROXY = 'https://recoveryiq-proxy.tu-subdomino.workers.dev/ai';
+```
+
+**El worker devuelve el formato de respuesta de Anthropic**, así que la app no
+distingue entre uno y otro: si algún día creas el secreto `ANTHROPIC_API_KEY`,
+pasas a usar Claude sin modificar nada más.
+
+> ⚠️ Un detalle que costó encontrar: en workers con sintaxis de **ES module**
+> los secretos llegan en el objeto `env` del handler, **no** como variables
+> globales (eso solo vale en el formato *service worker*). Escribir
+> `typeof ANTHROPIC_API_KEY !== 'undefined'` devuelve siempre `false` y el
+> worker responde "Falta el secreto" aunque exista.
 
 ---
 

@@ -2,11 +2,18 @@ name = "recoveryiq-proxy"
 main = "worker.js"
 compatibility_date = "2026-01-01"
 
+# Binding de Workers AI: es lo que hace que el chat sea GRATIS.
+# 10.000 neurons/día incluidos en el plan Free, sin tarjeta y sin posibilidad
+# de facturar de más en ese plan. Ver README §4.4.
+[ai]
+binding = "AI"
+
 # Despliegue:
 #   npx wrangler login
 #   npx wrangler deploy
 #
-# La API key de Anthropic NO va aquí. Se guarda como secreto:
+# Opcional: si prefieres usar la API de Anthropic de pago en lugar de
+# Workers AI, guarda su key como secreto (tiene prioridad si existe):
 #   npx wrangler secret put ANTHROPIC_API_KEY
 #
 # Después, en recovery-app.html:
