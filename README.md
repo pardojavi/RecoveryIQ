@@ -35,18 +35,20 @@ No hay build, ni npm, ni framework: se sube tal cual.
 | `recovery-app.html` (app, dashboard, calendario, informe, registro, ajustes) | ✅ Sí, todo |
 | Modo demo | ✅ Sí |
 | Instalar como PWA en el iPhone | ✅ Sí |
-| Conectar con tu cuenta de **Intervals.icu** | ❌ No, sin proxy |
-| Chat con **IA** | ❌ No, sin proxy |
+| Conectar con tu cuenta de **Intervals.icu** | ✅ Sí, vía `worker.js` |
+| Chat con **IA** | ⏳ Falta `wrangler secret put ANTHROPIC_API_KEY` |
 
-Para conectar con tus datos reales desde GitHub Pages necesitas el proxy en un
-sitio que sí ejecute código. Dos caminos:
+**Esta app ya está desplegada**: `MY_PROXY` apunta a
+`https://recoveryiq-proxy.ecovery.workers.dev`, un Cloudflare Worker creado a
+partir de `worker.js` de este repo.
 
-- **Cloudflare Workers (recomendado, gratis)** → §4.3
-- **PHP en otro hosting** → §4
-
-> ⚠️ Si dejas `var MY_PROXY = 'proxy.php';` y publicas en Pages, la app pedirá
-> `https://tuusuario.github.io/.../proxy.php`, recibirá un 404 y no conectará.
-> Cambia siempre `MY_PROXY` a la URL absoluta donde viva tu proxy.
+> Si clonas el repo para publicarlo en tu propia cuenta, despliega **tu** worker
+> (`wrangler deploy`) y cambia `MY_PROXY` por tu URL. Si dejas la de otro
+> proyecto — o pones `var MY_PROXY = 'proxy.php';` — recibirás un 404 y no
+> conectará.
+>
+> `proxy.php` y `proxy-ai.php` siguen siendo válidos para quien prefiera alojar
+> la app entera en un hosting con PHP (§4) en lugar de en Pages.
 
 ---
 
@@ -93,11 +95,13 @@ o cualquier hosting compartido con PHP.
 
 ### 4.1 `MY_PROXY` (obligatorio)
 
-Dentro de `recovery-app.html`, al principio del `<script>`:
+Dentro de `recovery-app.html`, al principio del `<script>`. El valor por defecto
+ya apunta al worker desplegado:
 
 ```js
-var MY_PROXY = 'proxy.php';        // si HTML y PHP están en el mismo directorio
-// var MY_PROXY = 'https://tudominio.com/proxy.php';   // si está en otro sitio
+var MY_PROXY = 'https://recoveryiq-proxy.ecovery.workers.dev';   // Cloudflare Worker (actual)
+// var MY_PROXY = 'proxy.php';                                     // si PHP y HTML van juntos
+// var MY_PROXY = 'https://tudominio.com/proxy.php';               // PHP en otro sitio
 ```
 
 Si `MY_PROXY` no funciona, la app intenta un fallback público

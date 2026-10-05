@@ -1194,10 +1194,11 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 
 /* ---------- 1. CONFIGURACIÓN DE PROXIES ---------- */
 // Proxy de Intervals.icu (obligatorio para evitar CORS).
-// 'proxy.php' funciona si el HTML y el PHP están en el mismo directorio.
-// Si lo sirves en otro dominio, pon la URL absoluta:
+// GitHub Pages NO ejecuta PHP, así que el proxy vive en Cloudflare Workers
+// (worker.js de este repo). Ver README §4.3.
+// Si en su lugar alojas proxy.php en un hosting con PHP, pon su URL absoluta:
 //   'https://tudominio.com/proxy.php'
-var MY_PROXY = 'proxy.php';
+var MY_PROXY = 'https://recoveryiq-proxy.ecovery.workers.dev';
 
 // Proxy de Claude (proxy-ai.php). Déjalo a null hasta subirlo.
 var MY_AI_PROXY = null;
@@ -2313,15 +2314,17 @@ function doConnect(){
   S.athleteId = id;
   S.apiKey    = key;
   S.isDemo    = false;
-  safeSet('riq_config', { athleteId: id, apiKey: key });
 
   showLoading('Conectando con Intervals.icu&#8230;');
   fetchData().then(function(d){
+    // Solo se persiste la sesión cuando Intervals.icu la ha aceptado
+    safeSet('riq_config', { athleteId: id, apiKey: key });
     initApp(d);
     showTab('dashboard');
     showToast('&#9989; Conectado');
   }).catch(function(e){
     hideLoading();
+    S.apiKey = '';
     showErrorModal(friendlyError(e));
   });
 }
