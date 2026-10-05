@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Seguridad — NUNCA subir claves reales
+proxy-ai-config.php
+*.local.php
+.env
+.env.*
+
+# Editores / IDE
+.vscode/
+.idea/
+*.swp
+
+# Dependencias (si algún día se añaden)
+node_modules/

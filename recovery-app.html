@@ -1,0 +1,2557 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RecoveryIQ">
+<meta name="theme-color" content="#0a0a0f">
+<title>RecoveryIQ</title>
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   RECOVERYIQ 3.0.0 — Sistema de diseño
+   ============================================================ */
+:root{
+  --bg:#0a0a0f;
+  --bg2:#12121a;
+  --bg3:#1a1a26;
+  --card:#1e1e2e;
+  --card2:#252538;
+  --border:rgba(255,255,255,0.08);
+
+  --text:#f0f0f8;
+  --text2:rgba(240,240,248,0.6);
+  --text3:rgba(240,240,248,0.35);
+
+  --accent:#6c63ff;
+  --accent2:#a78bfa;
+  --green:#22d3a0;
+  --yellow:#fbbf24;
+  --red:#f87171;
+  --blue:#60a5fa;
+  --pink:#f472b6;
+
+  --r:18px;
+  --r2:24px;
+
+  --safe-top:env(safe-area-inset-top, 44px);
+  --safe-bottom:env(safe-area-inset-bottom, 34px);
+}
+
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size:16px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  overflow:hidden;
+  overscroll-behavior:none;
+}
+button,input,textarea{font-family:inherit; font-size:16px; color:inherit;}
+button{border:0; background:none; cursor:pointer; padding:0;}
+::-webkit-scrollbar{width:0; height:0;}
+
+/* ---------- Screens ---------- */
+.screen{
+  position:fixed;
+  inset:0;
+  display:none;
+  flex-direction:column;
+  background:var(--bg);
+}
+.screen.active{display:flex;}
+
+/* ---------- Top bar ---------- */
+.top-bar{
+  position:sticky;
+  top:0;
+  z-index:100;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex:0 0 auto;
+  padding:calc(var(--safe-top) + 10px) 18px 12px;
+  background:rgba(10,10,15,0.72);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);
+}
+.app-logo,.logo{
+  font-size:20px;
+  font-weight:700;
+  letter-spacing:-0.4px;
+  background:linear-gradient(135deg, var(--accent2), var(--accent), var(--blue));
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+.top-actions{display:flex; gap:8px;}
+.icon-btn{
+  width:40px; height:40px;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:12px;
+  font-size:17px;
+  transition:background .15s ease, transform .15s ease;
+}
+.icon-btn:active{transform:scale(.92); background:var(--card2);}
+.icon-btn.spinning{animation:spin 1s linear infinite;}
+
+/* ---------- Scroll area ---------- */
+.scroll-area{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  position:relative;
+  padding:16px 16px 28px;
+}
+.tab-content{display:none;}
+.tab-content.active{display:block; animation:fadeUp .22s ease;}
+
+/* ---------- Bottom nav ---------- */
+.bottom-nav{
+  flex:0 0 auto;
+  z-index:200;
+  display:flex;
+  justify-content:space-around;
+  align-items:flex-start;
+  gap:2px;
+  padding:8px 6px calc(var(--safe-bottom) + 6px);
+  background:rgba(10,10,15,0.82);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border-top:1px solid var(--border);
+}
+.nav-item{
+  flex:1;
+  min-height:44px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:3px;
+  padding:5px 2px;
+  border-radius:14px;
+  opacity:.4;
+  transition:opacity .18s ease, background .18s ease;
+}
+.nav-item .nav-ico{font-size:19px; line-height:1;}
+.nav-item .nav-lbl{font-size:10px; font-weight:500; letter-spacing:.2px;}
+.nav-item.active{opacity:1; background:rgba(108,99,255,.14);}
+.nav-item.active .nav-ico{color:var(--accent2);}
+.nav-item:active{transform:scale(.95);}
+
+/* ============================================================
+   SETUP SCREEN
+   ============================================================ */
+#setup-screen{
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  align-items:center;
+  padding:calc(var(--safe-top) + 40px) 24px calc(var(--safe-bottom) + 40px);
+}
+.setup-inner{width:100%; max-width:360px; margin:auto; text-align:center;}
+.logo-big{
+  font-size:42px;
+  font-weight:700;
+  letter-spacing:-1.4px;
+  line-height:1.05;
+  background:linear-gradient(135deg, var(--accent2), var(--accent), var(--blue));
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+.tagline{
+  color:var(--text2);
+  font-size:15px;
+  font-weight:300;
+  margin:10px 0 30px;
+}
+.setup-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r2);
+  padding:22px 20px;
+  text-align:left;
+}
+.field-label{
+  display:block;
+  font-size:12px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.7px;
+  color:var(--text3);
+  margin:0 0 7px;
+}
+.field + .field{margin-top:16px;}
+.input{
+  width:100%;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:14px 15px;
+  font-size:16px;
+  color:var(--text);
+  outline:none;
+  transition:border-color .18s ease, box-shadow .18s ease;
+  -webkit-appearance:none;
+}
+.input::placeholder{color:var(--text3);}
+.input:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(108,99,255,.18);}
+.hint{
+  font-size:12px;
+  color:var(--text3);
+  margin-top:7px;
+  line-height:1.5;
+}
+.btn-primary{
+  display:block;
+  width:100%;
+  min-height:50px;
+  margin-top:20px;
+  background:linear-gradient(135deg, var(--accent), #8b5cf6);
+  color:#fff;
+  font-size:16px;
+  font-weight:600;
+  border-radius:16px;
+  transition:transform .15s ease, filter .15s ease;
+}
+.btn-primary:active{transform:scale(.97); filter:brightness(1.1);}
+.btn-demo{
+  display:block;
+  width:100%;
+  min-height:48px;
+  margin-top:14px;
+  background:transparent;
+  border:1px dashed rgba(167,139,250,.5);
+  color:var(--accent2);
+  font-size:15px;
+  font-weight:500;
+  border-radius:16px;
+}
+.btn-demo:active{background:rgba(167,139,250,.1); transform:scale(.97);}
+.setup-note{
+  margin-top:26px;
+  font-size:12px;
+  color:var(--text3);
+  line-height:1.6;
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+.recovery-hero{
+  position:relative;
+  overflow:hidden;
+  background:linear-gradient(160deg, var(--card) 0%, var(--card2) 100%);
+  border:1px solid var(--border);
+  border-radius:var(--r2);
+  padding:20px;
+}
+.recovery-hero::before{
+  content:'';
+  position:absolute;
+  top:-70px; right:-70px;
+  width:210px; height:210px;
+  background:radial-gradient(circle, rgba(108,99,255,.42) 0%, rgba(108,99,255,0) 70%);
+  pointer-events:none;
+}
+.hero-label{
+  position:relative;
+  font-size:13px;
+  font-weight:500;
+  color:var(--text2);
+  margin-bottom:16px;
+}
+.hero-main{position:relative; display:flex; align-items:center; gap:18px;}
+.score-circle{
+  width:90px; height:90px;
+  border-radius:50%;
+  background:conic-gradient(var(--sc, var(--green)) calc(var(--pct, 50) * 1%), var(--bg3) 0);
+  display:flex; align-items:center; justify-content:center;
+  position:relative; flex-shrink:0;
+}
+.score-circle::after{
+  content:'';
+  position:absolute; inset:8px;
+  border-radius:50%;
+  background:var(--card);
+}
+.score-number{
+  position:relative; z-index:1;
+  font-size:26px; font-weight:700;
+  letter-spacing:-1px;
+}
+.hero-info{min-width:0;}
+.score-status{
+  font-size:20px; font-weight:700; letter-spacing:-.3px;
+  margin-bottom:4px;
+}
+.score-desc{
+  font-size:13px; color:var(--text2); font-weight:300;
+  line-height:1.5;
+}
+.trend-pills{
+  position:relative;
+  display:flex; flex-wrap:wrap; gap:7px;
+  margin-top:18px;
+}
+.pill{
+  display:inline-flex; align-items:center; gap:5px;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:999px;
+  padding:6px 11px;
+  font-size:12px; font-weight:500;
+  color:var(--text2);
+}
+.pill b{font-weight:600; color:var(--text);}
+.pill .arrow{font-size:11px; font-weight:700;}
+.pill.up .arrow{color:var(--green);}
+.pill.down .arrow{color:var(--red);}
+.pill.flat .arrow{color:var(--yellow);}
+.sync-label{
+  position:relative;
+  display:flex; align-items:center; gap:7px;
+  margin-top:15px;
+  font-size:11px;
+  color:var(--text3);
+  text-transform:uppercase;
+  letter-spacing:.6px;
+}
+.sync-label .dot{
+  width:7px; height:7px; border-radius:50%;
+  background:var(--green);
+  animation:pulse 1.8s ease-in-out infinite;
+}
+
+/* Cards genéricas */
+.chart-card,.panel,.insight-card,.log-entry,.settings-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+}
+.chart-card{padding:18px 16px; margin-top:16px;}
+.card-title{
+  font-size:13px; font-weight:600;
+  color:var(--text2);
+  margin-bottom:14px;
+}
+.section-title{
+  font-size:13px; font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.8px;
+  color:var(--text3);
+  margin:24px 0 12px;
+}
+
+/* Week dots + chart */
+.week-dots{display:flex; justify-content:space-between; gap:4px; margin-bottom:16px;}
+.wd{
+  flex:1;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+}
+.wd .wd-dot{
+  width:30px; height:30px;
+  border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--bg3);
+  font-size:11px; font-weight:600;
+  color:var(--text2);
+  border:1px solid transparent;
+}
+.wd .wd-num{font-size:10px; color:var(--text3);}
+.wd.today .wd-dot{background:var(--accent); color:#fff;}
+.wd.today .wd-num{color:var(--accent2); font-weight:600;}
+.week-chart{
+  display:flex; align-items:flex-end; justify-content:space-between;
+  gap:6px; height:74px;
+  padding-top:6px;
+  border-bottom:1px solid var(--border);
+}
+.wc-col{
+  flex:1;
+  display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
+  height:100%;
+}
+.wc-bar{
+  width:100%;
+  max-width:26px;
+  border-radius:6px 6px 0 0;
+  min-height:4px;
+  background:linear-gradient(180deg, var(--accent2), var(--accent));
+  transition:height .4s ease;
+}
+.wc-bar.empty{background:var(--bg3); height:4px !important;}
+
+/* Metrics */
+.metrics-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+.metric{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:15px 14px;
+}
+.metric-top{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+.metric-ico{
+  width:28px; height:28px;
+  border-radius:9px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px;
+  background:var(--bg3);
+}
+.metric-label{font-size:11px; font-weight:600; color:var(--text3); text-transform:uppercase; letter-spacing:.6px;}
+.metric-val{font-size:26px; font-weight:700; letter-spacing:-1px; line-height:1.1;}
+.metric-val small{font-size:13px; font-weight:500; color:var(--text2); margin-left:3px;}
+.metric-sub{font-size:11px; color:var(--text3); margin-top:3px; min-height:15px;}
+.bar{
+  height:5px;
+  background:var(--bg3);
+  border-radius:99px;
+  overflow:hidden;
+  margin-top:11px;
+}
+.bar > i{
+  display:block; height:100%;
+  border-radius:99px;
+  background:var(--accent);
+  transition:width .5s ease;
+}
+
+/* Insights */
+.insights-list{display:flex; flex-direction:column; gap:10px;}
+.insight-card{
+  display:flex; gap:12px;
+  padding:14px;
+  align-items:flex-start;
+}
+.insight-ico{
+  width:34px; height:34px; flex-shrink:0;
+  border-radius:11px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px;
+  background:var(--bg3);
+}
+.insight-card.good .insight-ico{background:rgba(34,211,160,.14);}
+.insight-card.warn .insight-ico{background:rgba(251,191,36,.14);}
+.insight-card.bad  .insight-ico{background:rgba(248,113,113,.14);}
+.insight-title{font-size:14px; font-weight:600; margin-bottom:3px;}
+.insight-body{font-size:12.5px; color:var(--text2); line-height:1.5;}
+.link-analysis{
+  display:inline-block;
+  margin-top:16px;
+  color:var(--accent2);
+  font-size:14px; font-weight:600;
+  padding:8px 0;
+}
+
+/* ============================================================
+   CALENDARIO
+   ============================================================ */
+.cal-header{
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:14px;
+}
+.cal-title{font-size:19px; font-weight:700; letter-spacing:-.4px; text-transform:capitalize;}
+.cal-nav{display:flex; gap:8px;}
+.cal-grid{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  gap:6px;
+}
+.cal-dow{
+  text-align:center;
+  font-size:11px; font-weight:600;
+  color:var(--text3);
+  padding-bottom:4px;
+}
+.cal-day{
+  position:relative;
+  aspect-ratio:1/1;
+  min-height:40px;
+  border-radius:12px;
+  background:var(--bg2);
+  border:1px solid transparent;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:3px;
+  font-size:13px; font-weight:500;
+  color:var(--text3);
+}
+.cal-day.empty{background:transparent;}
+.cal-day.has-data{color:var(--text); cursor:pointer;}
+.cal-day .cal-score{font-size:9px; font-weight:700; line-height:1;}
+.cal-day .cal-dot{width:5px; height:5px; border-radius:50%;}
+.cal-day.today{border-color:var(--accent2);}
+.cal-day.selected{outline:2px solid var(--accent); outline-offset:-2px;}
+.cal-day .log-mark{
+  position:absolute; top:3px; right:4px;
+  width:5px; height:5px; border-radius:50%;
+  background:var(--pink);
+}
+#day-detail{
+  margin-top:16px;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:16px;
+}
+#day-detail.hidden{display:none;}
+.dd-title{font-size:16px; font-weight:700; margin-bottom:13px; text-transform:capitalize;}
+.dd-row{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:9px 0;
+  border-bottom:1px solid var(--border);
+  font-size:14px;
+}
+.dd-row:last-child{border-bottom:0;}
+.dd-row .k{color:var(--text2);}
+.dd-row .v{font-weight:600;}
+.dd-sub{
+  margin-top:14px; padding-top:13px;
+  border-top:1px dashed var(--border);
+}
+.dd-sub-title{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--pink); margin-bottom:9px;}
+.dd-notes{font-size:13px; color:var(--text2); line-height:1.55; margin-top:9px;}
+
+/* ============================================================
+   INFORME
+   ============================================================ */
+.verdict{
+  display:block;
+  text-align:center;
+  padding:18px 14px;
+  border-radius:var(--r2);
+  font-size:17px; font-weight:700;
+  letter-spacing:.4px;
+  border:1px solid transparent;
+}
+.verdict.go{background:rgba(34,211,160,.13); color:var(--green); border-color:rgba(34,211,160,.35);}
+.verdict.go.mid{background:rgba(251,191,36,.13); color:var(--yellow); border-color:rgba(251,191,36,.35);}
+.verdict.caution{background:rgba(251,146,60,.13); color:#fb923c; border-color:rgba(251,146,60,.35);}
+.verdict.stop{background:rgba(248,113,113,.13); color:var(--red); border-color:rgba(248,113,113,.35);}
+.report-date{text-align:center; font-size:12px; color:var(--text3); margin-top:9px;}
+.rbar{margin-top:18px;}
+.rbar-head{display:flex; justify-content:space-between; font-size:13px; margin-bottom:7px;}
+.rbar-head .k{color:var(--text2);}
+.rbar-head .v{font-weight:600;}
+.rbar-track{height:9px; background:var(--bg3); border-radius:99px; overflow:hidden;}
+.rbar-fill{height:100%; border-radius:99px; transition:width .6s ease;}
+.rec-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-left:3px solid var(--accent);
+  border-radius:14px;
+  padding:14px 15px;
+  margin-bottom:10px;
+}
+.rec-card.warn{border-left-color:var(--yellow);}
+.rec-card.bad{border-left-color:var(--red);}
+.rec-card.good{border-left-color:var(--green);}
+.rec-title{font-size:14px; font-weight:600; margin-bottom:5px;}
+.rec-body{font-size:13px; color:var(--text2); line-height:1.55;}
+.btn-ghost{
+  display:block; width:100%;
+  min-height:46px;
+  margin-top:20px;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:14px;
+  color:var(--text);
+  font-size:15px; font-weight:600;
+}
+.btn-ghost:active{background:var(--card2); transform:scale(.98);}
+
+/* ============================================================
+   CHAT IA
+   ============================================================ */
+#tab-ai.active{display:flex; flex-direction:column; height:100%; overflow:hidden;}
+.chat-wrap{display:flex; flex-direction:column; height:100%; min-height:0;}
+.quick-pills{
+  display:flex; gap:8px;
+  overflow-x:auto;
+  padding-bottom:12px;
+  flex:0 0 auto;
+  -webkit-overflow-scrolling:touch;
+}
+.quick-pill{
+  flex:0 0 auto;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:999px;
+  padding:9px 14px;
+  font-size:13px; font-weight:500;
+  color:var(--text2);
+  white-space:nowrap;
+  min-height:38px;
+}
+.quick-pill:active{background:var(--card2); color:var(--text);}
+.chat-msgs{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  display:flex; flex-direction:column; gap:12px;
+  padding:4px 2px 10px;
+}
+.msg{display:flex; animation:fadeUp .25s ease;}
+.msg.user{justify-content:flex-end;}
+.msg.ai{justify-content:flex-start;}
+.msg-bubble{
+  max-width:84%;
+  padding:11px 14px;
+  font-size:14px;
+  line-height:1.55;
+  white-space:pre-wrap;
+  word-wrap:break-word;
+}
+.msg.user .msg-bubble{
+  background:linear-gradient(135deg, var(--accent), #8b5cf6);
+  color:#fff;
+  border-bottom-right-radius:4px;
+}
+.msg.ai .msg-bubble{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-bottom-left-radius:4px;
+}
+.typing{display:inline-flex; gap:4px; align-items:center; padding:4px 2px;}
+.typing i{
+  width:6px; height:6px; border-radius:50%;
+  background:var(--text3);
+  display:block;
+  animation:blink 1.2s infinite;
+}
+.typing i:nth-child(2){animation-delay:.18s;}
+.typing i:nth-child(3){animation-delay:.36s;}
+.chat-input-row{
+  flex:0 0 auto;
+  display:flex; gap:9px; align-items:flex-end;
+  padding-top:10px;
+  border-top:1px solid var(--border);
+}
+.chat-input{
+  flex:1;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:11px 14px;
+  font-size:16px;
+  line-height:1.4;
+  resize:none;
+  outline:none;
+  max-height:104px;
+  min-height:46px;
+  color:var(--text);
+}
+.chat-input:focus{border-color:var(--accent);}
+#btn-send{
+  width:46px; height:46px;
+  flex-shrink:0;
+  border-radius:50%;
+  background:linear-gradient(135deg, var(--accent), #8b5cf6);
+  color:#fff;
+  font-size:19px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+  transition:transform .15s ease;
+}
+#btn-send:active{transform:scale(.9);}
+
+/* ============================================================
+   REGISTRAR
+   ============================================================ */
+.form-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r2);
+  padding:18px 16px;
+}
+.q-block + .q-block{margin-top:20px;}
+.q-label{font-size:14px; font-weight:600; margin-bottom:11px;}
+.rating-row{display:flex; gap:7px;}
+.rating-btn{
+  flex:1;
+  min-height:46px;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:13px;
+  font-size:21px;
+  display:flex; align-items:center; justify-content:center;
+  transition:transform .12s ease, background .15s ease, border-color .15s ease;
+}
+.rating-btn:active{transform:scale(.9);}
+.rating-btn.selected{
+  background:rgba(108,99,255,.2);
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(108,99,255,.22);
+}
+.tags-row{display:flex; flex-wrap:wrap; gap:7px;}
+.tag-btn{
+  min-height:40px;
+  padding:9px 13px;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:999px;
+  font-size:13px; font-weight:500;
+  color:var(--text2);
+  transition:transform .12s ease, background .15s ease;
+}
+.tag-btn:active{transform:scale(.94);}
+.tag-btn.selected{
+  background:rgba(167,139,250,.18);
+  border-color:var(--accent2);
+  color:var(--text);
+}
+.textarea{
+  width:100%;
+  min-height:88px;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:13px 14px;
+  font-size:16px;
+  color:var(--text);
+  resize:vertical;
+  outline:none;
+}
+.textarea:focus{border-color:var(--accent);}
+.log-entry{
+  display:flex; align-items:center; gap:12px;
+  padding:13px 14px;
+}
+.log-entry .le-dot{width:9px; height:9px; border-radius:50%; flex-shrink:0;}
+.log-entry .le-date{font-size:13px; font-weight:600; flex:1;}
+.log-entry .le-emojis{font-size:15px; letter-spacing:2px;}
+.log-entry .le-score{font-size:15px; font-weight:700;}
+.empty-note{
+  text-align:center;
+  color:var(--text3);
+  font-size:13px;
+  padding:22px 10px;
+  background:var(--bg2);
+  border:1px dashed var(--border);
+  border-radius:14px;
+}
+
+/* ============================================================
+   AJUSTES
+   ============================================================ */
+.settings-card{padding:6px 16px; margin-bottom:16px;}
+.set-row{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:14px;
+  padding:15px 0;
+  border-bottom:1px solid var(--border);
+  font-size:14.5px;
+}
+.set-row:last-child{border-bottom:0;}
+.set-row .k{color:var(--text2);}
+.set-row .v{font-weight:600; text-align:right; word-break:break-all;}
+.btn-danger{
+  display:block; width:100%;
+  min-height:48px;
+  background:rgba(248,113,113,.1);
+  border:1px solid rgba(248,113,113,.35);
+  border-radius:14px;
+  color:var(--red);
+  font-size:15px; font-weight:600;
+}
+.btn-danger:active{background:rgba(248,113,113,.2);}
+
+/* ============================================================
+   OVERLAYS
+   ============================================================ */
+#loading{
+  position:fixed; inset:0;
+  z-index:900;
+  display:none;
+  flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:16px;
+  background:rgba(10,10,15,.9);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  padding:30px;
+  text-align:center;
+}
+#loading.active{display:flex;}
+.spinner{
+  width:42px; height:42px;
+  border-radius:50%;
+  border:3px solid rgba(255,255,255,.12);
+  border-top-color:var(--accent2);
+  animation:spin .85s linear infinite;
+}
+#loading .load-text{font-size:14px; color:var(--text2);}
+
+#toast{
+  position:fixed;
+  left:50%;
+  bottom:calc(var(--safe-bottom) + 96px);
+  transform:translate(-50%, 24px);
+  z-index:950;
+  max-width:86%;
+  background:var(--card2);
+  border:1px solid var(--border);
+  border-radius:999px;
+  padding:12px 20px;
+  font-size:14px; font-weight:500;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .25s ease, transform .25s ease;
+  box-shadow:0 12px 34px rgba(0,0,0,.5);
+  text-align:center;
+}
+#toast.show{opacity:1; transform:translate(-50%, 0);}
+
+#js-err{
+  position:fixed;
+  top:0; left:0; right:0;
+  z-index:999;
+  display:none;
+  background:#7f1d1d;
+  color:#fff;
+  font-size:12px;
+  padding:calc(var(--safe-top) + 8px) 14px 9px;
+  font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break:break-word;
+}
+#js-err.show{display:block;}
+
+.sheet-overlay{
+  position:fixed; inset:0;
+  z-index:940;
+  background:rgba(0,0,0,.62);
+  display:flex; align-items:flex-end; justify-content:center;
+  animation:fadeIn .18s ease;
+  -webkit-backdrop-filter:blur(3px);
+  backdrop-filter:blur(3px);
+}
+.sheet{
+  width:100%; max-width:430px;
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:24px 24px 0 0;
+  padding:12px 22px calc(var(--safe-bottom) + 26px);
+  animation:sheetUp .28s cubic-bezier(.2,.8,.3,1);
+}
+.sheet-handle{
+  width:42px; height:4px; border-radius:99px;
+  background:rgba(255,255,255,.2);
+  margin:0 auto 16px;
+}
+.sheet-title{font-size:18px; font-weight:700; margin-bottom:9px;}
+.sheet-msg{font-size:14px; color:var(--text2); line-height:1.6; white-space:pre-wrap;}
+.sheet .btn-primary{margin-top:20px;}
+
+/* ============================================================
+   ANIMACIONES
+   ============================================================ */
+@keyframes pulse{0%,100%{opacity:1} 50%{opacity:.3}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeUp{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0} to{opacity:1}}
+@keyframes sheetUp{from{transform:translateY(100%)} to{transform:translateY(0)}}
+@keyframes blink{0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)}}
+
+/* ============================================================
+   DESKTOP — simula iPhone
+   ============================================================ */
+@media(min-width:500px){
+  :root{--safe-top:44px; --safe-bottom:34px;}
+  body{
+    background:#050508;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+  }
+  .screen{
+    position:relative;
+    inset:auto;
+    width:390px;
+    height:844px;
+    max-height:calc(100vh - 48px);
+    border-radius:40px;
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,.1);
+    box-shadow:0 34px 90px rgba(0,0,0,.7);
+  }
+  #js-err{border-radius:0 0 12px 12px; left:50%; transform:translateX(-50%); max-width:390px;}
+}
+</style>
+</head>
+<body>
+
+<div id="js-err"></div>
+
+<!-- ============================================================
+     SETUP
+     ============================================================ -->
+<div id="setup-screen" class="screen active">
+  <div class="setup-inner">
+    <div class="logo-big">RecoveryIQ</div>
+    <p class="tagline">Recuperación inteligente basada en tus datos</p>
+
+    <div class="setup-card">
+      <div class="field">
+        <label class="field-label" for="inp-athlete">Athlete ID</label>
+        <input class="input" id="inp-athlete" type="text" autocapitalize="none"
+               autocorrect="off" spellcheck="false" placeholder="Ej: i1234567">
+        <div class="hint">Intervals.icu → Perfil → Configuración → API</div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="inp-key">API Key</label>
+        <input class="input" id="inp-key" type="password" autocapitalize="none"
+               autocorrect="off" spellcheck="false" placeholder="Tu API key de Intervals.icu">
+      </div>
+
+      <button class="btn-primary" id="btn-connect">Conectar y Continuar</button>
+    </div>
+
+    <button class="btn-demo" id="btn-demo">Probar con datos demo</button>
+
+    <div class="setup-note">
+      Tus credenciales se guardan solo en este dispositivo (localStorage).<br>
+      Se usan para hablar con la API de Intervals.icu a través de tu proxy.
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     APP
+     ============================================================ -->
+<div id="app-screen" class="screen">
+
+  <div class="top-bar">
+    <div class="app-logo">RecoveryIQ</div>
+    <div class="top-actions">
+      <button class="icon-btn" id="btn-sync" title="Sincronizar">&#128260;</button>
+      <button class="icon-btn" id="btn-settings" title="Ajustes">&#9881;&#65039;</button>
+    </div>
+  </div>
+
+  <div class="scroll-area" id="scroll-area">
+
+    <!-- ---------- INICIO ---------- -->
+    <div id="tab-dashboard" class="tab-content active">
+      <div class="recovery-hero">
+        <div class="hero-label">&#128202; &#205;ndice de Recuperaci&#243;n Hoy</div>
+        <div class="hero-main">
+          <div class="score-circle" id="score-circle">
+            <span class="score-number" id="score-num">&#8211;</span>
+          </div>
+          <div class="hero-info">
+            <div class="score-status" id="score-status">&#8212;</div>
+            <div class="score-desc" id="score-desc">Sincroniza tus datos para ver el an&#225;lisis.</div>
+          </div>
+        </div>
+        <div class="trend-pills" id="trend-pills"></div>
+        <div class="sync-label" id="sync-label"><span class="dot"></span> Sincronizado &#183; Intervals.icu</div>
+      </div>
+
+      <div class="chart-card">
+        <div class="card-title">&#128197; &#218;ltimos 7 d&#237;as</div>
+        <div class="week-dots" id="week-dots"></div>
+        <div class="week-chart" id="week-chart"></div>
+      </div>
+
+      <div class="section-title">M&#233;tricas de hoy</div>
+      <div class="metrics-grid" id="metrics-grid"></div>
+
+      <div class="section-title">Conclusiones</div>
+      <div class="insights-list" id="insights-list"></div>
+      <a class="link-analysis" id="link-analysis">Ver an&#225;lisis &#8594;</a>
+    </div>
+
+    <!-- ---------- CALENDARIO ---------- -->
+    <div id="tab-calendar" class="tab-content">
+      <div class="cal-header">
+        <div class="cal-title" id="cal-title">&#8212;</div>
+        <div class="cal-nav">
+          <button class="icon-btn" id="cal-prev" aria-label="Mes anterior">&#8249;</button>
+          <button class="icon-btn" id="cal-next" aria-label="Mes siguiente">&#8250;</button>
+        </div>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div id="day-detail" class="hidden"></div>
+    </div>
+
+    <!-- ---------- INFORME ---------- -->
+    <div id="tab-report" class="tab-content">
+      <div id="report-verdict-wrap">
+        <div class="verdict go" id="report-verdict">&#9888;&#65039; SIN DATOS</div>
+        <div class="report-date" id="report-date">&#8212;</div>
+      </div>
+
+      <div class="section-title">Estado de las m&#233;tricas</div>
+      <div id="report-bars"></div>
+
+      <div class="section-title">Recomendaciones</div>
+      <div id="report-recs"></div>
+
+      <button class="btn-ghost" id="btn-refresh-report">&#128260; Actualizar informe</button>
+    </div>
+
+    <!-- ---------- IA ---------- -->
+    <div id="tab-ai" class="tab-content">
+      <div class="chat-wrap">
+        <div class="quick-pills" id="quick-pills">
+          <button class="quick-pill" data-q="&#191;Puedo entrenar fuerte hoy?">&#127942; &#191;Entreno fuerte?</button>
+          <button class="quick-pill" data-q="&#191;Qu&#233; tipo de entrenamiento me recomiendas hoy?">&#127919; &#191;Qu&#233; entreno?</button>
+          <button class="quick-pill" data-q="Analiza mi tendencia de recuperaci&#243;n de los &#250;ltimos 7 d&#237;as">&#128200; Tendencia 7 d&#237;as</button>
+          <button class="quick-pill" data-q="&#191;C&#243;mo puedo mejorar mi recuperaci&#243;n?">&#128170; Mejorar recuperaci&#243;n</button>
+          <button class="quick-pill" data-q="&#191;Qu&#233; dicen mis datos de HRV?">&#128147; Analizar HRV</button>
+        </div>
+        <div class="chat-msgs" id="chat-msgs"></div>
+        <div class="chat-input-row">
+          <textarea class="chat-input" id="chat-input" rows="1"
+                    placeholder="Pregunta a RecoveryIQ&#8230;"></textarea>
+          <button id="btn-send" aria-label="Enviar">&#8593;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- REGISTRAR ---------- -->
+    <div id="tab-log" class="tab-content">
+      <div class="form-card">
+        <div class="q-block">
+          <div class="q-label">&#128171; &#191;C&#243;mo has dormido?</div>
+          <div class="rating-row" data-field="sleepQ">
+            <button class="rating-btn" data-val="1" title="Muy mal">&#128564;</button>
+            <button class="rating-btn" data-val="2" title="Regular">&#128528;</button>
+            <button class="rating-btn" data-val="3" title="Bien">&#128578;</button>
+            <button class="rating-btn" data-val="4" title="Muy bien">&#128516;</button>
+            <button class="rating-btn" data-val="5" title="Excelente">&#127775;</button>
+          </div>
+        </div>
+
+        <div class="q-block">
+          <div class="q-label">&#9889; Nivel de cansancio</div>
+          <div class="rating-row" data-field="fatigue">
+            <button class="rating-btn" data-val="1" title="Muy ligerado">&#9889;</button>
+            <button class="rating-btn" data-val="2" title="Ligerado">&#128170;</button>
+            <button class="rating-btn" data-val="3" title="Normal">&#128529;</button>
+            <button class="rating-btn" data-val="4" title="Cansado">&#129393;</button>
+            <button class="rating-btn" data-val="5" title="Agotado">&#128128;</button>
+          </div>
+        </div>
+
+        <div class="q-block">
+          <div class="q-label">&#128522; Estado de &#225;nimo</div>
+          <div class="rating-row" data-field="mood">
+            <button class="rating-btn" data-val="1" title="Mal humor">&#128548;</button>
+            <button class="rating-btn" data-val="2" title="Baj&#243;n">&#128543;</button>
+            <button class="rating-btn" data-val="3" title="Neutral">&#128528;</button>
+            <button class="rating-btn" data-val="4" title="Bien">&#128522;</button>
+            <button class="rating-btn" data-val="5" title="Genial">&#129321;</button>
+          </div>
+        </div>
+
+        <div class="q-block">
+          <div class="q-label">&#128161; Estr&#233;s externo</div>
+          <div class="rating-row" data-field="stress">
+            <button class="rating-btn" data-val="1" title="Nada estresado">&#129496;</button>
+            <button class="rating-btn" data-val="2" title="Relajado">&#128524;</button>
+            <button class="rating-btn" data-val="3" title="Medio">&#128556;</button>
+            <button class="rating-btn" data-val="4" title="Alto">&#128560;</button>
+            <button class="rating-btn" data-val="5" title="Muy alto">&#129327;</button>
+          </div>
+        </div>
+
+        <div class="q-block">
+          <div class="q-label">&#128169; Dolores / molestias</div>
+          <div class="tags-row" data-field="pains">
+            <button class="tag-btn" data-val="Ninguno">Ninguno</button>
+            <button class="tag-btn" data-val="Piernas">Piernas</button>
+            <button class="tag-btn" data-val="Espalda">Espalda</button>
+            <button class="tag-btn" data-val="Rodillas">Rodillas</button>
+            <button class="tag-btn" data-val="Hombros">Hombros</button>
+            <button class="tag-btn" data-val="Cuello">Cuello</button>
+            <button class="tag-btn" data-val="Pies">Pies</button>
+          </div>
+        </div>
+
+        <div class="q-block">
+          <div class="q-label">&#129656; Estado de salud</div>
+          <div class="tags-row" data-field="health">
+            <button class="tag-btn" data-val="&#9989; Sano">&#9989; Sano</button>
+            <button class="tag-btn" data-val="&#129319; Resfriado">&#129319; Resfriado</button>
+            <button class="tag-btn" data-val="&#129298; Fiebre">&#129298; Fiebre</button>
+            <button class="tag-btn" data-val="&#128558; Alergias">&#128558; Alergias</button>
+            <button class="tag-btn" data-val="&#129326; Est&#243;mago">&#129326; Est&#243;mago</button>
+          </div>
+        </div>
+
+        <div class="q-block">
+          <div class="q-label">&#128221; Notas adicionales</div>
+          <textarea class="textarea" id="log-notes" placeholder="&#191;Algo m&#225;s que quieras anotar? Viajes, comidas, estr&#233;s laboral&#8230;"></textarea>
+        </div>
+
+        <button class="btn-primary" id="btn-save-log">Guardar registro</button>
+      </div>
+
+      <div class="section-title">Historial reciente</div>
+      <div class="insights-list" id="log-history"></div>
+    </div>
+
+    <!-- ---------- AJUSTES ---------- -->
+    <div id="tab-settings" class="tab-content">
+      <div class="section-title" style="margin-top:4px;">Cuenta</div>
+      <div class="settings-card">
+        <div class="set-row">
+          <span class="k">Athlete ID</span>
+          <span class="v" id="display-athlete">&#8212;</span>
+        </div>
+        <div class="set-row">
+          <span class="k">Modo</span>
+          <span class="v" id="display-mode">Intervals.icu</span>
+        </div>
+        <div class="set-row">
+          <span class="k">Datos</span>
+          <button class="btn-ghost" id="settings-sync-btn" style="margin-top:0; width:auto; padding:9px 16px; min-height:40px;">&#128260; Sincronizar</button>
+        </div>
+      </div>
+
+      <div class="section-title">Info</div>
+      <div class="settings-card">
+        <div class="set-row">
+          <span class="k">Versi&#243;n</span>
+          <span class="v">3.0.0</span>
+        </div>
+        <div class="set-row">
+          <span class="k">Registros guardados</span>
+          <span class="v" id="display-log-count">0</span>
+        </div>
+        <div class="set-row">
+          <span class="k">&#205;ndice de hoy</span>
+          <span class="v" id="display-score">&#8212;</span>
+        </div>
+      </div>
+
+      <div class="section-title">Sesi&#243;n</div>
+      <button class="btn-danger" id="btn-logout">Cerrar sesi&#243;n</button>
+
+      <div class="setup-note" style="text-align:center; margin-top:22px;">
+        RecoveryIQ no es un dispositivo m&#233;dico.<br>Usa sus indicadores como gu&#237;a, no como diagn&#243;stico.
+      </div>
+    </div>
+
+  </div><!-- /.scroll-area -->
+
+  <div class="bottom-nav">
+    <button class="nav-item active" data-tab="dashboard">
+      <span class="nav-ico">&#127968;</span><span class="nav-lbl">Inicio</span>
+    </button>
+    <button class="nav-item" data-tab="calendar">
+      <span class="nav-ico">&#128197;</span><span class="nav-lbl">Calendario</span>
+    </button>
+    <button class="nav-item" data-tab="report">
+      <span class="nav-ico">&#127937;</span><span class="nav-lbl">Informe</span>
+    </button>
+    <button class="nav-item" data-tab="ai">
+      <span class="nav-ico">&#129302;</span><span class="nav-lbl">IA</span>
+    </button>
+    <button class="nav-item" data-tab="log">
+      <span class="nav-ico">&#128221;</span><span class="nav-lbl">Registrar</span>
+    </button>
+  </div>
+</div><!-- /#app-screen -->
+
+<!-- ============================================================
+     OVERLAYS
+     ============================================================ -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div class="load-text" id="load-text">Cargando&#8230;</div>
+</div>
+<div id="toast"></div>
+
+<script>
+/* ================================================================
+   RECOVERYIQ 3.0.0 — single-file PWA
+   ES5 a propósito: var / function / sin flechas ni import.
+   El script va al final de <body>: NO se usa DOMContentLoaded.
+   ================================================================ */
+
+/* ---------- 1. CONFIGURACIÓN DE PROXIES ---------- */
+// Proxy de Intervals.icu (obligatorio para evitar CORS).
+// 'proxy.php' funciona si el HTML y el PHP están en el mismo directorio.
+// Si lo sirves en otro dominio, pon la URL absoluta:
+//   'https://tudominio.com/proxy.php'
+var MY_PROXY = 'proxy.php';
+
+// Proxy de Claude (proxy-ai.php). Déjalo a null hasta subirlo.
+var MY_AI_PROXY = null;
+
+var CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+var APP_VERSION  = '3.0.0';
+
+/* ---------- 2. ESTADO GLOBAL ---------- */
+var S = {
+  athleteId:   '',
+  apiKey:      '',
+  isDemo:      false,
+  data:        null,
+  logs:        [],
+  calY:        new Date().getFullYear(),
+  calM:        new Date().getMonth(),
+  selectedDay: null,
+  chatHistory: []
+};
+
+/* Medias de referencia (60 días) — las lee calcScore() */
+var avgHRV = 0, avgHR = 0, avgSleep = 0;
+
+/* ---------- 3. UTILIDADES ---------- */
+function $(id){ return document.getElementById(id); }
+
+function wire(id, ev, fn){
+  try {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener(ev, fn);
+  } catch(e){}
+}
+
+function esc(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+/* Texto plano -> HTML seguro (para renderizar contenido de la IA) */
+function text2html(s){
+  return esc(s).replace(/\n/g, '<br>');
+}
+
+function round1(n){ return Math.round(n * 10) / 10; }
+function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+function pad2(n){ return (n < 10 ? '0' : '') + n; }
+
+function ymd(d){ return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+
+function parseYmd(s){
+  var p = String(s).split('-');
+  return new Date(parseInt(p[0],10), parseInt(p[1],10) - 1, parseInt(p[2],10), 12, 0, 0, 0);
+}
+
+function todayKey(){ return ymd(new Date()); }
+
+function shiftDays(d, n){
+  var x = new Date(d.getTime());
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+var DOW_LETTER = ['D','L','M','X','J','V','S'];
+var MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio',
+              'Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+var MONTHS_SHORT = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+var DOW_FULL = ['domingo','lunes','martes','mi&#233;rcoles','jueves','viernes','s&#225;bado'];
+
+function getSleep(w){
+  if (!w) return null;
+  if (w.sleepSecs && w.sleepSecs > 0) return w.sleepSecs / 3600;
+  if (w.sleep && w.sleep > 0) return w.sleep;
+  return null;
+}
+
+function safeGet(k, fallback){
+  try {
+    var v = localStorage.getItem(k);
+    return v ? JSON.parse(v) : fallback;
+  } catch(e){ return fallback; }
+}
+
+function safeSet(k, v){
+  try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){}
+}
+
+function safeDel(k){
+  try { localStorage.removeItem(k); } catch(e){}
+}
+
+/* ---------- 4. SCORE ---------- */
+function calcScore(w){
+  if (!w) return 0;
+  var score = 50; // base neutral
+
+  // HRV
+  if (w.hrv && avgHRV) {
+    score += Math.min(25, ((w.hrv - avgHRV) / avgHRV) * 150);
+  }
+
+  // FC reposo: más baja = mejor
+  if (w.restingHR && avgHR) {
+    score += Math.min(15, ((avgHR - w.restingHR) / avgHR) * 80);
+  }
+
+  // Sueño: óptimo 7-9h
+  var sleep = getSleep(w);
+  if (sleep !== null) {
+    if (sleep >= 7 && sleep <= 9) score += 10;
+    else if (sleep >= 6)          score += 4;
+    else                          score -= 8;
+  }
+
+  // TSB = CTL - ATL
+  if (w.ctl && w.atl) {
+    score += Math.min(10, Math.max(-10, (w.ctl - w.atl) * 0.5));
+  }
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function scoreColor(score){
+  if (score >= 80) return 'var(--green)';
+  if (score >= 65) return 'var(--blue)';
+  if (score >= 50) return 'var(--yellow)';
+  return 'var(--red)';
+}
+function scoreColorHex(score){
+  if (score === null || score === undefined) return 'var(--bg3)';
+  if (score >= 80) return '#22d3a0';
+  if (score >= 65) return '#60a5fa';
+  if (score >= 50) return '#fbbf24';
+  return '#f87171';
+}
+function scoreLabel(score){
+  if (score >= 80) return 'Excelente';
+  if (score >= 65) return 'Buena';
+  if (score >= 50) return 'Moderada';
+  return 'Baja';
+}
+function scoreDesc(score){
+  if (score >= 80) return 'Recuperaci&#243;n &#243;ptima. Puedes afrontar alta intensidad.';
+  if (score >= 65) return 'Buena base de recuperaci&#243;n. Entrena con confianza.';
+  if (score >= 50) return 'Recuperaci&#243;n media. Ajusta la intensidad de hoy.';
+  return 'Cuerpo fatigado. Prioriza descanso y trabajo suave.';
+}
+function scoreEmoji(score){
+  if (score >= 80) return '&#128994;';
+  if (score >= 65) return '&#128993;';
+  if (score >= 50) return '&#128992;';
+  return '&#128308;';
+}
+function verdictFor(score){
+  if (score >= 80) return { cls:'go',        text:'&#128994; LISTO PARA ENTRENAR' };
+  if (score >= 65) return { cls:'go mid',    text:'&#128993; PUEDE ENTRENAR' };
+  if (score >= 50) return { cls:'caution',   text:'&#128992; ENTRENAMIENTO SUAVE' };
+  return              { cls:'stop',      text:'&#128308; DESCANSO' };
+}
+
+/* ---------- 5. DATOS ---------- */
+function normalizeRows(list){
+  if (!list) return [];
+  if (Object.prototype.toString.call(list) !== '[object Array]') {
+    list = list.wellness || list.activities || list.items || list.data || [];
+  }
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var w = list[i];
+    if (!w || !w.id) continue;
+    out.push({
+      id:         w.id,
+      hrv:        (w.hrv || w.hrvAvg || null),
+      restingHR:  (w.restingHR || w.resting_hr || null),
+      sleep:      getSleep(w),
+      ctl:        w.ctl || 0,
+      atl:        w.atl || 0
+    });
+  }
+  out.sort(function(a,b){ return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0); });
+  return out;
+}
+
+function assembleData(rows, activities){
+  if (rows.length > 60) rows = rows.slice(rows.length - 60);
+
+  var hs = [], rs = [], ss = [], i;
+  for (i = 0; i < rows.length; i++) {
+    if (rows[i].hrv && rows[i].hrv > 0) hs.push(rows[i].hrv);
+    if (rows[i].restingHR && rows[i].restingHR > 0) rs.push(rows[i].restingHR);
+    if (rows[i].sleep !== null) ss.push(rows[i].sleep);
+  }
+  var sh = 0, sr = 0, ss2 = 0;
+  for (i = 0; i < hs.length; i++) sh += hs[i];
+  for (i = 0; i < rs.length; i++) sr += rs[i];
+  for (i = 0; i < ss.length; i++) ss2 += ss[i];
+  avgHRV   = hs.length ? sh / hs.length : 0;
+  avgHR    = rs.length ? sr / rs.length : 0;
+  avgSleep = ss.length ? ss2 / ss.length : 0;
+
+  var dailyMap = {};
+  for (i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var ctl = r.ctl || 0, atl = r.atl || 0;
+    dailyMap[r.id] = {
+      hrv:       r.hrv,
+      restingHR: r.restingHR,
+      sleep:     r.sleep,
+      ctl:       ctl,
+      atl:       atl,
+      tsb:       Math.round((ctl - atl) * 10) / 10,
+      score:     calcScore(r)
+    };
+  }
+
+  var keys = [];
+  for (var k in dailyMap) if (dailyMap.hasOwnProperty(k)) keys.push(k);
+  keys.sort();
+  if (!keys.length) return null;
+
+  var tk = todayKey();
+  var endKey = dailyMap[tk] ? tk : keys[keys.length - 1];
+  var t = dailyMap[endKey];
+
+  var today = {
+    date:                endKey,
+    hrv:                 t.hrv,
+    hrvBaseline:         round1(avgHRV),
+    hrvChange:           avgHRV ? round1(((t.hrv || avgHRV) - avgHRV) / avgHRV * 100) : 0,
+    restingHR:           t.restingHR,
+    restingHRBaseline:   round1(avgHR),
+    restingHRChange:     avgHR ? round1(((t.restingHR || avgHR) - avgHR) / avgHR * 100) : 0,
+    sleep:               t.sleep,
+    sleepChange:         t.sleep !== null ? round1(t.sleep - avgSleep) : 0,
+    ctl:                 t.ctl,
+    atl:                 t.atl,
+    tsb:                 t.tsb,
+    recoveryScore:       t.score
+  };
+
+  var endD = parseYmd(endKey);
+  var week = [];
+  for (i = 6; i >= 0; i--) {
+    var d = shiftDays(endD, -i);
+    var wk = ymd(d);
+    week.push({
+      day:     DOW_LETTER[d.getDay()],
+      num:     d.getDate(),
+      key:     wk,
+      score:   dailyMap[wk] ? dailyMap[wk].score : null,
+      isToday: wk === tk
+    });
+  }
+
+  var lastActivity = null;
+  if (activities && activities.length) {
+    var sorted = activities.slice().sort(function(a,b){
+      var ad = a.start_date || a.start_date_local || a.id || '';
+      var bd = b.start_date || b.start_date_local || b.id || '';
+      return ad < bd ? 1 : (ad > bd ? -1 : 0);
+    });
+    lastActivity = sorted[0];
+  }
+
+  return {
+    today:       today,
+    week:        week,
+    dailyMap:    dailyMap,
+    firstKey:    keys[0],
+    lastKey:     keys[keys.length - 1],
+    lastActivity: lastActivity,
+    activities:  activities || []
+  };
+}
+
+function buildData(rawWellness, rawActivities){
+  return assembleData(normalizeRows(rawWellness), rawActivities || []);
+}
+
+/* ---------- 6. DATOS DEMO (28 días) ---------- */
+var DEMO_HRV = [58,56,60,62,59,55,53,57,61,63,60,57,53,51,55,58,61,63,60,57,54,56,59,62,58,55,57,64];
+var DEMO_RHR = [55,56,56,53,58,54,57,55,53,54,58,56,54,55,55,56,56,53,54,57,55,56,53,54,55,56,54,52];
+var DEMO_SL  = [6.5,7,6,6,7.5,6.5,6,7,6.5,6,5.5,7,6.5,6,7.5,6,6.5,7,6,6,6.5,7,6,6.5,7,6,6.5,7.5];
+var DEMO_CTL = [42,44,45,47,46,48,50,52,51,53,55,54,56,58,57,59,60,62,61,63,64,65,66,64,65,67,66,68];
+var DEMO_ATL = [55,52,50,48,53,56,54,50,47,52,55,58,56,52,49,54,57,60,62,58,55,60,64,68,70,66,70,72];
+
+function buildDemo(){
+  var rows = [];
+  var base = shiftDays(new Date(), -27);
+  for (var i = 0; i < 28; i++) {
+    rows.push({
+      id:        ymd(shiftDays(base, i)),
+      hrv:       DEMO_HRV[i],
+      restingHR: DEMO_RHR[i],
+      sleep:     DEMO_SL[i],
+      ctl:       DEMO_CTL[i],
+      atl:       DEMO_ATL[i]
+    });
+  }
+  return assembleData(rows, []);
+}
+var DEMO = null; // se construye al arrancar
+
+/* ---------- 7. FETCH CON FALLBACK ---------- */
+function apiFetch(url, authHeader){
+  var attempts = [];
+
+  if (MY_PROXY && MY_PROXY.indexOf('AQUI_TU_DOMINIO') < 0) {
+    attempts.push(function(){
+      return fetch(MY_PROXY + '?url=' + encodeURIComponent(url) +
+                            '&auth=' + encodeURIComponent(authHeader),
+                   { cache: 'no-store' });
+    });
+  }
+
+  // Fallback: allorigins (sin garantías de autenticación)
+  attempts.push(function(){
+    return fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), {
+      headers: { 'Authorization': authHeader, 'x-requested-with': 'XMLHttpRequest' }
+    });
+  });
+
+  function tryNext(idx){
+    if (idx >= attempts.length) {
+      return Promise.reject(new Error('No se pudo conectar con Intervals.icu. Revisa tu proxy (proxy.php).'));
+    }
+    return attempts[idx]().then(function(res){
+      if (res.status === 401) throw new Error('API Key incorrecta. Revísala en Intervals.icu.');
+      if (res.status === 403) throw new Error('PROXY_403 El proxy rechazó la petición (403). Revisa la URL de MY_PROXY en el HTML.');
+      if (res.status === 404) throw new Error('Athlete ID no encontrado. Debe empezar por "i" (Ej: i1234567).');
+      if (!res.ok) throw new Error('RETRY');
+      return res.json();
+    }).catch(function(e){
+      var m = String(e && e.message ? e.message : e);
+      if (m === 'RETRY' || m.indexOf('fetch') >= 0 || m.indexOf('NetworkError') >= 0) {
+        return tryNext(idx + 1);
+      }
+      throw e;
+    });
+  }
+
+  return tryNext(0);
+}
+
+function fetchData(){
+  var authHeader = 'Basic ' + btoa('API_KEY:' + S.apiKey);
+  var oldest = ymd(shiftDays(new Date(), -60));
+  var newest = ymd(new Date());
+  var base = 'https://intervals.icu/api/v1/athlete/' + encodeURIComponent(S.athleteId);
+  var uWell = base + '/wellness?oldest=' + oldest + '&newest=' + newest;
+  var uAct  = base + '/activities?oldest=' + oldest + '&newest=' + newest + '&limit=30';
+
+  return Promise.all([apiFetch(uWell, authHeader), apiFetch(uAct, authHeader)])
+    .then(function(res){
+      var wl = res[0];
+      if (!wl || (wl.length === 0)) throw new Error('NO_DATA');
+      var data = buildData(wl, res[1]);
+      if (!data) throw new Error('NO_DATA');
+      return data;
+    });
+}
+
+/* ---------- 8. OVERLAYS ---------- */
+function showLoading(text){
+  var el = $('loading');
+  if (!el) return;
+  $('load-text') && ($('load-text').innerHTML = text || 'Cargando&#8230;');
+  el.classList.add('active');
+}
+function hideLoading(){
+  var el = $('loading');
+  if (el) el.classList.remove('active');
+}
+function setLoadText(t){
+  var el = $('load-text');
+  if (el) el.innerHTML = t;
+}
+
+var toastTimer = null;
+function showToast(msg){
+  var el = $('toast');
+  if (!el) return;
+  el.innerHTML = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.classList.remove('show'); }, 2800);
+}
+
+function showErrorModal(msg){
+  var ov = document.createElement('div');
+  ov.className = 'sheet-overlay';
+  ov.innerHTML =
+    '<div class="sheet">' +
+      '<div class="sheet-handle"></div>' +
+      '<div class="sheet-title">Ups&#8230;</div>' +
+      '<div class="sheet-msg">' + msg + '</div>' +
+      '<button class="btn-primary sheet-close">Cerrar</button>' +
+    '</div>';
+  function close(){
+    if (ov.parentNode) ov.parentNode.removeChild(ov);
+  }
+  ov.addEventListener('click', function(e){
+    if (e.target === ov) close();
+    if (e.target && e.target.className && String(e.target.className).indexOf('sheet-close') >= 0) close();
+  });
+  document.body.appendChild(ov);
+}
+
+function friendlyError(e){
+  var m = String(e && e.message ? e.message : e);
+  if (m === 'NO_DATA') {
+    return 'No se encontraron datos de <b>wellness</b> en tu cuenta.<br><br>' +
+           'Abre Intervals.icu y comprueba que tienes datos de los &#250;ltimos 60 d&#237;as (HRV, sue&#241;o o FC).';
+  }
+  if (m.indexOf('PROXY_403') >= 0) {
+    return 'El proxy rechaz&#243; la petici&#243;n (403).<br><br>' +
+           'Revisa la variable <b>MY_PROXY</b> dentro del HTML: debe apuntar a tu <b>proxy.php</b>.';
+  }
+  if (m.indexOf('API Key') >= 0 || m.indexOf('Athlete') >= 0) return esc(m);
+  if (m.indexOf('proxy (proxy.php)') >= 0 || m.indexOf('fetch') >= 0 ||
+      m.indexOf('NetworkError') >= 0 || m.indexOf('proxy.php') >= 0) {
+    return 'No se pudo conectar con Intervals.icu.<br><br>' +
+           'Comprueba que <b>proxy.php</b> est&#225; subido en el mismo directorio que el HTML ' +
+           'y que tu servidor tiene PHP 8 o superior.';
+  }
+  return esc(m);
+}
+
+window.onerror = function(msg, src, line){
+  var el = $('js-err');
+  if (el) {
+    el.innerHTML = 'JS ERROR: ' + esc(msg) + ' &#183; l&#237;nea ' + line;
+    el.classList.add('show');
+    setTimeout(function(){ el.classList.remove('show'); }, 6000);
+  }
+  return false;
+};
+
+/* ---------- 9. NAVEGACIÓN ---------- */
+function showTab(tab){
+  var tabs = document.querySelectorAll('.tab-content');
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+  var items = document.querySelectorAll('.nav-item');
+  for (i = 0; i < items.length; i++) items[i].classList.remove('active');
+
+  var tc = $('tab-' + tab);
+  if (tc) tc.classList.add('active');
+
+  var ni = document.querySelector('.nav-item[data-tab="' + tab + '"]');
+  if (ni) ni.classList.add('active');
+
+  if (tab === 'calendar') renderCalendar();
+  if (tab === 'report')   renderReport();
+  if (tab === 'log')      renderLogHistory();
+  if (tab === 'settings') renderSettings();
+
+  if (tab === 'ai' && S.chatHistory.length > 0) {
+    var msgs = $('chat-msgs');
+    if (msgs && msgs.children.length === 0) {
+      for (i = 0; i < S.chatHistory.length; i++) {
+        var hm = S.chatHistory[i];
+        addMsg(hm.role, hm.role === 'user' ? hm.content : text2html(hm.content), true);
+      }
+      scrollChat();
+    }
+  }
+
+  var sa = $('scroll-area');
+  if (sa && tab !== 'ai') sa.scrollTop = 0;
+}
+
+/* ---------- 10. DASHBOARD ---------- */
+function trendPill(label, valueText, change, higherIsBetter, changeUnit, pctMode){
+  var threshold = pctMode ? 2 : 0.3;
+  var flat = Math.abs(change) < threshold;
+  var better = flat ? 0 : (((change > 0) === !!higherIsBetter) ? 1 : -1);
+
+  var cls   = flat ? 'flat' : (better > 0 ? 'up' : 'down');
+  var arrow = flat ? '&#8594;' : (change > 0 ? '&#8593;' : '&#8595;');
+  var sign  = change > 0 ? '+' : '';
+  var extra = flat ? '' : ' <span style="opacity:.6">' + sign + round1(change) + changeUnit + '</span>';
+
+  return '<span class="pill ' + cls + '">' +
+           '<span class="arrow">' + arrow + '</span>' +
+           label + ' <b>' + valueText + '</b>' + extra +
+         '</span>';
+}
+
+function renderDashboard(){
+  if (!S.data) return;
+  var t = S.data.today;
+  var score = t.recoveryScore;
+
+  /* Score circle */
+  var sc = $('score-circle');
+  if (sc) {
+    sc.style.setProperty('--pct', score);
+    sc.style.setProperty('--sc', scoreColor(score));
+  }
+  if ($('score-num'))   $('score-num').innerHTML = score;
+  if ($('score-status'))$('score-status').innerHTML = scoreLabel(score);
+  if ($('score-status'))$('score-status').style.color = scoreColor(score);
+  if ($('score-desc'))  $('score-desc').innerHTML = scoreDesc(score);
+
+  /* Trend pills */
+  var pills = '';
+  if (t.hrv)            pills += trendPill('HRV', t.hrv + ' ms', t.hrvChange, true, '%', true);
+  if (t.sleep !== null) pills += trendPill('Sue&#241;o', t.sleep + ' h', t.sleepChange, true, ' h', false);
+  if (t.restingHR)      pills += trendPill('FC', t.restingHR + ' bpm', t.restingHRChange, false, '%', true);
+
+  var tsb = t.tsb;
+  var tsbCls   = tsb >= 0 ? 'up' : (tsb < -10 ? 'down' : 'flat');
+  var tsbArrow = tsb > 0 ? '&#8593;' : (tsb < -10 ? '&#8595;' : '&#8594;');
+  pills += '<span class="pill ' + tsbCls + '"><span class="arrow">' + tsbArrow +
+           '</span>TSB <b>' + (tsb > 0 ? '+' : '') + tsb + '</b></span>';
+
+  if ($('trend-pills')) $('trend-pills').innerHTML = pills;
+
+  /* Semana */
+  var wd = '', wc = '', i, w;
+  for (i = 0; i < S.data.week.length; i++) {
+    w = S.data.week[i];
+    var has = w.score !== null;
+    var sc = has ? scoreColorHex(w.score) : '';
+    var dotStyle = w.isToday
+      ? ''
+      : (has ? 'background:' + sc + '26; color:' + sc : '');
+    wd += '<div class="wd' + (w.isToday ? ' today' : '') + '">' +
+            '<div class="wd-dot" style="' + dotStyle + '">' + DOW_LETTER[parseYmd(w.key).getDay()] + '</div>' +
+            '<div class="wd-num">' + w.num + '</div>' +
+          '</div>';
+    var h = has ? Math.max(6, Math.round(w.score * 0.62)) : 4;
+    wc += '<div class="wc-col"><div class="wc-bar' + (has ? '' : ' empty') + '" style="height:' + h + 'px' +
+          (has ? ';background:linear-gradient(180deg,' + sc + ',' + sc + '99)' : '') +
+          '"></div></div>';
+  }
+  if ($('week-dots')) $('week-dots').innerHTML = wd;
+  if ($('week-chart'))$('week-chart').innerHTML = wc;
+
+  /* Métricas */
+  var mHrv = t.hrv ? Math.round(clamp(t.hrv / (avgHRV * 1.4) * 100, 4, 100)) : 0;
+  var mRhr = t.restingHR ? Math.round(clamp(((avgHR * 1.4) - t.restingHR) / (avgHR * 0.8) * 100, 4, 100)) : 0;
+  var mSlp = t.sleep !== null ? Math.round(clamp(t.sleep / 9 * 100, 4, 100)) : 0;
+  var mTsb = Math.round(clamp((t.tsb + 20) / 40 * 100, 4, 100));
+  var cTsb = t.tsb < -10 ? 'var(--red)' : (t.tsb > 5 ? 'var(--green)' : 'var(--yellow)');
+
+  $('metrics-grid') && ($('metrics-grid').innerHTML =
+    metricCard('&#128147;', 'HRV', t.hrv ? t.hrv : '&#8211;', 'ms',
+               t.hrv ? 'Baseline ' + t.hrvBaseline + ' ms' : 'Sin datos', mHrv, 'var(--accent2)') +
+    metricCard('&#129658;', 'FC reposo', t.restingHR ? t.restingHR : '&#8211;', 'bpm',
+               t.restingHR ? 'Baseline ' + t.restingHRBaseline + ' bpm' : 'Sin datos', mRhr, 'var(--pink)') +
+    metricCard('&#127769;', 'Sue&#241;o', t.sleep !== null ? t.sleep : '&#8211;', 'h',
+               t.sleep !== null ? '&#211;ptimo 7&#8211;9 h' : 'Sin datos', mSlp, 'var(--blue)') +
+    metricCard('&#9889;', 'TSB', (t.tsb > 0 ? '+' : '') + t.tsb, '',
+               'CTL ' + t.ctl + ' &#183; ATL ' + t.atl, mTsb, cTsb)
+  );
+
+  /* Insights */
+  var insights = buildInsights();
+  var html = '';
+  for (i = 0; i < insights.length; i++) {
+    html += '<div class="insight-card ' + insights[i].type + '">' +
+              '<div class="insight-ico">' + insights[i].icon + '</div>' +
+              '<div><div class="insight-title">' + insights[i].title + '</div>' +
+              '<div class="insight-body">' + insights[i].body + '</div></div>' +
+            '</div>';
+  }
+  if ($('insights-list')) $('insights-list').innerHTML = html;
+
+  if ($('sync-label')) {
+    $('sync-label').innerHTML = '<span class="dot"></span> ' +
+      (S.isDemo ? 'Modo demo &#183; datos de ejemplo' : 'Sincronizado &#183; Intervals.icu');
+  }
+}
+
+function metricCard(ico, label, val, unit, sub, pct, color){
+  return '<div class="metric">' +
+           '<div class="metric-top"><div class="metric-ico">' + ico + '</div>' +
+           '<div class="metric-label">' + label + '</div></div>' +
+           '<div class="metric-val">' + val + (unit ? '<small>' + unit + '</small>' : '') + '</div>' +
+           '<div class="metric-sub">' + sub + '</div>' +
+           '<div class="bar"><i style="width:' + pct + '%;background:' + color + '"></i></div>' +
+         '</div>';
+}
+
+function buildInsights(){
+  if (!S.data) return [];
+  var t = S.data.today;
+  var out = [];
+
+  if (t.hrvChange >= 10) {
+    out.push({ type:'good', icon:'&#128147;', title:'HRV elevado',
+      body:'HRV un ' + t.hrvChange + '% por encima de tu media de 60 d&#237;as. Se&#241;al de buena adaptaci&#243;n.' });
+  } else if (t.hrvChange <= -10) {
+    out.push({ type:'bad', icon:'&#128147;', title:'HRV bajo',
+      body:'HRV un ' + Math.abs(t.hrvChange) + '% por debajo de tu base. El cuerpo a&#250;n no ha asentado la carga.' });
+  }
+
+  if (t.sleep !== null && t.sleep < 6.5) {
+    out.push({ type:'warn', icon:'&#127769;', title:'Sue&#241;o insuficiente',
+      body:'Solo ' + t.sleep + ' h. Por debajo de las 7 h recomendadas para recuperar.' });
+  } else if (t.sleep !== null && t.sleep >= 8) {
+    out.push({ type:'good', icon:'&#127769;', title:'Buen descanso',
+      body:t.sleep + ' h de sue&#241;o. Has cubierto bien la ventana de recuperaci&#243;n nocturna.' });
+  }
+
+  if (t.tsb < -15) {
+    out.push({ type:'warn', icon:'&#9889;', title:'Fatiga acumulada alta',
+      body:'TSB ' + t.tsb + '. La carga aguda supera de forma notable a la cr&#243;nica.' });
+  } else if (t.tsb > 10) {
+    out.push({ type:'good', icon:'&#9889;', title:'Forma pico',
+      body:'TSB +' + t.tsb + '. Est&#225;s fresco: buen momento para rendir.' });
+  }
+
+  if (t.restingHRChange >= 8) {
+    out.push({ type:'bad', icon:'&#129658;', title:'FC en reposo elevada',
+      body:'Sube un ' + t.restingHRChange + '% frente a tu media. Puede indicar estr&#233;s, fatiga o inicio de enfermedad.' });
+  } else if (t.restingHRChange <= -5) {
+    out.push({ type:'good', icon:'&#129658;', title:'FC en reposo baja',
+      body:'Un ' + Math.abs(t.restingHRChange) + '% por debajo de tu media: signo de buena recuperaci&#243;n.' });
+  }
+
+  if (S.logs.length && S.logs[0].fatigue >= 4) {
+    out.push({ type:'warn', icon:'&#128564;', title:'Cansancio subjetivo alto',
+      body:'Anotaste ' + fatigueEmoji(S.logs[0].fatigue) + ' de cansancio. Contrastalo con tus valores objetivos.' });
+  }
+  if (S.logs.length && S.logs[0].pains && S.logs[0].pains.length &&
+      S.logs[0].pains[0] !== 'Ninguno') {
+    out.push({ type:'warn', icon:'&#128169;', title:'Molestias registradas',
+      body:'Has apuntado molestias en: ' + esc(S.logs[0].pains.join(', ')) + '. Val&#237;dalas antes de cargar.' });
+  }
+
+  if (!out.length) {
+    out.push({ type:'good', icon:'&#9989;', title:'Todo en orden',
+      body:'M&#233;tricas dentro de rango normal. Puedes entrenar con tranquilidad.' });
+  }
+  return out;
+}
+
+function fatigueEmoji(v){
+  return ['','&#9889;','&#128170;','&#128529;','&#129393;','&#128128;'][v] || '';
+}
+function moodEmoji(v){
+  return ['','&#128548;','&#128543;','&#128528;','&#128522;','&#129321;'][v] || '';
+}
+
+/* ---------- 11. CALENDARIO ---------- */
+function logForDate(key){
+  for (var i = 0; i < S.logs.length; i++) {
+    if (ymd(new Date(S.logs[i].date)) === key) return S.logs[i];
+  }
+  return null;
+}
+
+function renderCalendar(){
+  if (!S.data) return;
+  var grid = $('cal-grid');
+  if (!grid) return;
+
+  if ($('cal-title')) $('cal-title').innerHTML = MONTHS[S.calM] + ' ' + S.calY;
+
+  var first = new Date(S.calY, S.calM, 1, 12, 0, 0, 0);
+  var daysInMonth = new Date(S.calY, S.calM + 1, 0, 12, 0, 0, 0).getDate();
+  var offset = first.getDay();
+  var tk = todayKey();
+
+  var html = '', i;
+  var dows = ['D','L','M','X','J','V','S'];
+  for (i = 0; i < 7; i++) html += '<div class="cal-dow">' + dows[i] + '</div>';
+
+  for (i = 0; i < offset; i++) html += '<div class="cal-day empty"></div>';
+
+  for (i = 1; i <= daysInMonth; i++) {
+    var key = ymd(new Date(S.calY, S.calM, i, 12, 0, 0, 0));
+    var d = S.data.dailyMap[key];
+    var lg = logForDate(key);
+    var cls = 'cal-day';
+    var inner = '<span>' + i + '</span>';
+    if (d) {
+      cls += ' has-data';
+      var c = scoreColorHex(d.score);
+      inner += '<span class="cal-dot" style="background:' + c + '"></span>' +
+               '<span class="cal-score" style="color:' + c + '">' + d.score + '</span>';
+    }
+    if (key === tk) cls += ' today';
+    if (S.selectedDay === key) cls += ' selected';
+    html += '<div class="' + cls + '" data-key="' + key + '"' + (d ? ' data-has="1"' : '') + '>' +
+              (lg ? '<span class="log-mark"></span>' : '') + inner +
+            '</div>';
+  }
+
+  grid.innerHTML = html;
+
+  var days = grid.querySelectorAll('.cal-day[data-has]');
+  for (i = 0; i < days.length; i++) {
+    days[i].addEventListener('click', function(){
+      S.selectedDay = this.getAttribute('data-key');
+      renderCalendar();
+      showDayDetail(S.selectedDay);
+    });
+  }
+
+  if (S.selectedDay) showDayDetail(S.selectedDay);
+}
+
+function showDayDetail(key){
+  var el = $('day-detail');
+  if (!el) return;
+  var d = S.data ? S.data.dailyMap[key] : null;
+  var lg = logForDate(key);
+  if (!d && !lg) { el.className = 'hidden'; el.innerHTML = ''; return; }
+
+  var dt = parseYmd(key);
+  var title = DOW_FULL[dt.getDay()] + ' ' + dt.getDate() + ' ' + MONTHS[dt.getMonth()].toLowerCase();
+
+  var html = '<div class="dd-title">' + title + '</div>';
+
+  if (d) {
+    html += row('Recuperaci&#243;n', scoreEmoji(d.score) + ' ' + d.score + ' &#183; ' + scoreLabel(d.score), scoreColorHex(d.score));
+    html += row('HRV', (d.hrv || '&#8211;') + ' ms');
+    html += row('FC reposo', (d.restingHR || '&#8211;') + ' bpm');
+    html += row('Sue&#241;o', (d.sleep !== null ? d.sleep + ' h' : '&#8211;'));
+    html += row('CTL', d.ctl);
+    html += row('ATL', d.atl);
+    html += row('TSB', (d.tsb > 0 ? '+' : '') + d.tsb, d.tsb < -10 ? '#f87171' : (d.tsb > 5 ? '#22d3a0' : null));
+  } else {
+    html += '<div class="empty-note">Sin datos de Intervals.icu para este d&#237;a.</div>';
+  }
+
+  if (lg) {
+    html += '<div class="dd-sub"><div class="dd-sub-title">&#128221; Registro subjetivo</div>';
+    if (lg.fatigue)  html += row('Cansancio', fatigueEmoji(lg.fatigue) + ' ' + lg.fatigue + '/5');
+    if (lg.mood)     html += row('&#193;nimo', moodEmoji(lg.mood) + ' ' + lg.mood + '/5');
+    if (lg.sleepQ)   html += row('Calidad de sue&#241;o', lg.sleepQ + '/5');
+    if (lg.stress)   html += row('Estr&#233;s', lg.stress + '/5');
+    if (lg.pains && lg.pains.length)   html += row('Molestias', esc(lg.pains.join(', ')));
+    if (lg.health && lg.health.length)  html += row('Salud', esc(lg.health.join(', ')));
+    if (lg.notes)    html += '<div class="dd-notes">&#128221; ' + esc(lg.notes) + '</div>';
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+  el.className = '';
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function row(k, v, color){
+  return '<div class="dd-row"><span class="k">' + k + '</span>' +
+         '<span class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</span></div>';
+}
+
+/* ---------- 12. INFORME ---------- */
+function renderReport(){
+  if (!S.data) return;
+  var t = S.data.today;
+  var score = t.recoveryScore;
+  var v = verdictFor(score);
+
+  var vb = $('report-verdict');
+  if (vb) { vb.className = 'verdict ' + v.cls; vb.innerHTML = v.text; }
+  if ($('report-date')) {
+    var d = parseYmd(t.date);
+    $('report-date').innerHTML = 'Informe del ' + DOW_FULL[d.getDay()] + ' ' + d.getDate() +
+      ' de ' + MONTHS[d.getMonth()].toLowerCase() + ' &#183; RecoveryIQ ' + APP_VERSION;
+  }
+
+  var hrvPct = Math.round(clamp(t.hrv && avgHRV ? (t.hrv / avgHRV) * 100 : 0, 0, 100));
+  var slpPct = Math.round(clamp(t.sleep !== null ? (t.sleep / 9) * 100 : 0, 0, 100));
+
+  $('report-bars') && ($('report-bars').innerHTML =
+    bar('HRV vs baseline', hrvPct + '%', hrvPct,
+        (t.hrv || 0) + ' ms &#183; base ' + t.hrvBaseline + ' ms',
+        hrvPct >= 80 ? '#22d3a0' : (hrvPct >= 60 ? '#60a5fa' : '#f87171')) +
+    bar('Sue&#241;o vs 9 h m&#225;ximo', slpPct + '%', slpPct,
+        (t.sleep !== null ? t.sleep + ' h' : '&#8211;') + ' de 9 h',
+        slpPct >= 80 ? '#22d3a0' : (slpPct >= 72 ? '#60a5fa' : '#fbbf24')) +
+    bar('Puntuaci&#243;n global', score + '/100', score,
+        scoreLabel(score) + ' &#183; umbral de descanso 50',
+        scoreColorHex(score))
+  );
+
+  var recs = [];
+  if (score >= 80) {
+    recs.push({ cls:'good', title:'&#128293; Alta intensidad habilitada',
+      body:'Tu HRV, tu FC en reposo y tu TSB te permiten afrontar series exigentes o un test hoy. Aprov&#233;chalo.' });
+    recs.push({ cls:'', title:'&#128167; Hidrataci&#243;n y nutrici&#243;n',
+      body:'Mant&#233;n la ingesta de carbohidratos y electrolitos alrededor del entreno para sostener este estado.' });
+  } else if (score >= 65) {
+    recs.push({ cls:'', title:'&#127919; Entreno de calidad',
+      body:'Puedes encadenar un trabajo de calidad (ritmos, intervalos) pero evita llegar al l&#237;mite en la &#250;ltima serie.' });
+    recs.push({ cls:'', title:'&#128164; Prioriza el sue&#241;o',
+      body:'Apunta a 7&#8211;9 h esta noche para consolidar la tendencia positiva y subir de rango ma&#241;ana.' });
+  } else if (score >= 50) {
+    recs.push({ cls:'warn', title:'&#127939; Entrenamiento regenerativo',
+      body:'Rodaje f&#225;cil, rodillo o sesi&#243;n t&#233;cnica. Evita series al m&#225;ximo y controla las sensaciones.' });
+    recs.push({ cls:'warn', title:'&#129496; T&#233;cnicas de recuperaci&#243;n',
+      body:'Movilidad, paseo largo, ba&#241;o de contraste y comida real. Hoy el descanso activo rinde m&#225;s que la carga.' });
+  } else {
+    recs.push({ cls:'bad', title:'&#128721; Descanso',
+      body:'El cuerpo a&#250;n no ha asimilado la carga. Cambia el entreno por descanso completo o un paseo suave.' });
+    recs.push({ cls:'bad', title:'&#129367; Nutrici&#243;n anti-inflamatoria',
+      body:'Prote&#237;na suficiente, pescado, frutas, verduras de hoja y cero alcohol. Duerme m&#225;s de lo habitual.' });
+  }
+
+  if (t.sleep !== null && t.sleep < 7) {
+    recs.push({ cls:'warn', title:'&#9888;&#65039; D&#233;ficit de sue&#241;o',
+      body:'Solo ' + t.sleep + ' h de sue&#241;o. Recupera esta noche: el d&#233;ficit de sue&#241;o degrada la fuerza y la precisi&#243;n t&#233;cnica.' });
+  }
+  if (t.tsb < -15) {
+    recs.push({ cls:'warn', title:'&#9889; Carga aguda elevada',
+      body:'Tu TSB (' + t.tsb + ') indica fatiga acumulada. Considera un d&#237;a ligero antes de volver a cargar.' });
+  }
+
+  var html = '';
+  for (var i = 0; i < recs.length; i++) {
+    html += '<div class="rec-card ' + recs[i].cls + '">' +
+              '<div class="rec-title">' + recs[i].title + '</div>' +
+              '<div class="rec-body">' + recs[i].body + '</div>' +
+            '</div>';
+  }
+  if ($('report-recs')) $('report-recs').innerHTML = html;
+}
+
+function bar(k, right, pct, sub, color){
+  return '<div class="rbar">' +
+           '<div class="rbar-head"><span class="k">' + k + '</span><span class="v">' + right + '</span></div>' +
+           '<div class="rbar-track"><div class="rbar-fill" style="width:' + clamp(pct,0,100) + '%;background:' + color + '"></div></div>' +
+           '<div class="metric-sub" style="margin-top:6px">' + sub + '</div>' +
+         '</div>';
+}
+
+/* ---------- 13. REGISTRAR ---------- */
+function saveLog(){
+  var form = readLogForm();
+  var any = form.fatigue || form.sleepQ || form.mood || form.stress ||
+            form.pains.length || form.health.length || form.notes;
+  if (!any) {
+    showToast('&#9888;&#65039; Rellena al menos un campo');
+    return;
+  }
+
+  var entry = {
+    date: new Date().toISOString(),
+    fatigue: form.fatigue,
+    sleepQ:  form.sleepQ,
+    mood:    form.mood,
+    stress:  form.stress,
+    pains:   form.pains,
+    health:  form.health,
+    notes:   form.notes,
+    recoveryScore: S.data ? S.data.today.recoveryScore : 0
+  };
+
+  S.logs.unshift(entry);
+  while (S.logs.length > 180) S.logs.pop();
+  safeSet('riq_logs', S.logs);
+
+  resetLogForm();
+  renderLogHistory();
+  renderSettings();
+  showToast('&#9989; Registro guardado');
+}
+
+function readLogForm(){
+  var out = { fatigue:null, sleepQ:null, mood:null, stress:null, pains:[], health:[], notes:'' };
+
+  var rows = document.querySelectorAll('.rating-row');
+  for (var i = 0; i < rows.length; i++) {
+    var field = rows[i].getAttribute('data-field');
+    var sel = rows[i].querySelector('.rating-btn.selected');
+    if (sel && field) out[field] = parseInt(sel.getAttribute('data-val'), 10);
+  }
+
+  var trows = document.querySelectorAll('.tags-row');
+  for (i = 0; i < trows.length; i++) {
+    var tf = trows[i].getAttribute('data-field');
+    var btns = trows[i].querySelectorAll('.tag-btn.selected');
+    for (var j = 0; j < btns.length; j++) {
+      if (tf === 'pains') out.pains.push(btns[j].getAttribute('data-val'));
+      if (tf === 'health') out.health.push(btns[j].getAttribute('data-val'));
+    }
+  }
+
+  var nt = $('log-notes');
+  if (nt) out.notes = nt.value.replace(/^\s+|\s+$/g, '');
+  return out;
+}
+
+function resetLogForm(){
+  var rows = document.querySelectorAll('.rating-btn.selected');
+  for (var i = 0; i < rows.length; i++) rows[i].classList.remove('selected');
+  rows = document.querySelectorAll('.tag-btn.selected');
+  for (i = 0; i < rows.length; i++) rows[i].classList.remove('selected');
+  var nt = $('log-notes');
+  if (nt) nt.value = '';
+}
+
+function renderLogHistory(){
+  var el = $('log-history');
+  if (!el) return;
+  if (!S.logs.length) {
+    el.innerHTML = '<div class="empty-note">A&#250;n no hay registros.<br>Usa el formulario de arriba para apuntar c&#243;mo te sientes hoy.</div>';
+    return;
+  }
+  var html = '';
+  var n = Math.min(7, S.logs.length);
+  for (var i = 0; i < n; i++) {
+    var l = S.logs[i];
+    var d = new Date(l.date);
+    var key = ymd(d);
+    var sc = (typeof l.recoveryScore === 'number') ? l.recoveryScore : null;
+    html += '<div class="log-entry">' +
+              '<span class="le-dot" style="background:' + (sc === null ? 'var(--text3)' : scoreColorHex(sc)) + '"></span>' +
+              '<span class="le-date">' + DOW_LETTER[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS_SHORT[d.getMonth()] + '</span>' +
+              '<span class="le-emojis">' + (l.fatigue ? fatigueEmoji(l.fatigue) : '') + (l.mood ? moodEmoji(l.mood) : '') + '</span>' +
+              '<span class="le-score" style="color:' + (sc === null ? 'var(--text3)' : scoreColorHex(sc)) + '">' +
+                (sc === null ? '&#8211;' : sc) + '</span>' +
+            '</div>';
+  }
+  el.innerHTML = html;
+}
+
+/* ---------- 14. AJUSTES ---------- */
+function renderSettings(){
+  if ($('display-athlete')) $('display-athlete').innerHTML = S.isDemo ? 'modo demo' : (S.athleteId ? esc(S.athleteId) : '&#8212;');
+  if ($('display-mode'))    $('display-mode').innerHTML    = S.isDemo ? 'Datos de ejemplo' : 'Intervals.icu';
+  if ($('display-log-count'))$('display-log-count').innerHTML = S.logs.length;
+  if ($('display-score'))   $('display-score').innerHTML   = S.data ?
+      (S.data.today.recoveryScore + ' &#183; ' + scoreLabel(S.data.today.recoveryScore)) : '&#8212;';
+}
+
+/* ---------- 15. CHAT IA ---------- */
+function scrollChat(){
+  var m = $('chat-msgs');
+  if (m) m.scrollTop = m.scrollHeight;
+}
+
+function addMsg(role, text, silent){
+  var box = $('chat-msgs');
+  if (!box) return null;
+  var el = document.createElement('div');
+  el.className = 'msg ' + (role === 'user' ? 'user' : 'ai');
+  var b = document.createElement('div');
+  b.className = 'msg-bubble';
+  if (text) b.innerHTML = role === 'user' ? esc(text) : text;
+  el.appendChild(b);
+  box.appendChild(el);
+  if (!silent) scrollChat();
+  return b;
+}
+
+function updateMsg(el, text){
+  if (el) el.innerHTML = text;
+  scrollChat();
+}
+
+function addTyping(){
+  return addMsg('ai', '<span class="typing"><i></i><i></i><i></i></span>');
+}
+
+function buildSystemPrompt(){
+  var t = S.data ? S.data.today : null;
+  var line = t
+    ? 'Índice de recuperación: ' + t.recoveryScore + '/100 (' + scoreLabel(t.recoveryScore) + '). ' +
+      'HRV: ' + (t.hrv || 'n/d') + ' ms (base ' + t.hrvBaseline + '). ' +
+      'FC reposo: ' + (t.restingHR || 'n/d') + ' bpm (base ' + t.restingHRBaseline + '). ' +
+      'Sueño: ' + (t.sleep !== null ? t.sleep + ' h' : 'n/d') + '. ' +
+      'CTL: ' + t.ctl + ', ATL: ' + t.atl + ', TSB: ' + t.tsb + '.'
+    : 'Sin datos disponibles.';
+
+  var logLine = '';
+  if (S.logs.length) {
+    var l = S.logs[0];
+    logLine = ' Registro subjetivo de hoy: cansancio ' + (l.fatigue || '-') + '/5, ánimo ' +
+              (l.mood || '-') + '/5, estrés ' + (l.stress || '-') + '/5' +
+              (l.pains && l.pains.length ? ', molestias en ' + l.pains.join(', ') : '') + '.';
+  }
+
+  // Texto PLANO: esto se envía a la API de Claude, no se renderiza como HTML.
+  return 'Eres RecoveryIQ, asistente de IA en recuperación deportiva. ' +
+         'Responde siempre en español, conciso y práctico (máximo 200 palabras). ' +
+         'Da recomendaciones concretas de entrenamiento y descanso basándote en los datos. ' +
+         'No afirmas que eres un médico ni das diagnósticos. ' +
+         'DATOS DEL ATLETA — ' + line + logLine;
+}
+
+/* Prepara el historial para la API de Anthropic:
+   - el primer mensaje debe ser de rol "user"
+   - los mensajes del mismo rol consecutivos se fusionan */
+function buildApiMessages(){
+  var msgs = S.chatHistory.slice(-10);
+  while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+
+  var out = [], i, last;
+  for (i = 0; i < msgs.length; i++) {
+    last = out.length ? out[out.length - 1] : null;
+    if (last && last.role === msgs[i].role) {
+      last.content = last.content + '\n\n' + msgs[i].content;
+    } else {
+      out.push({ role: msgs[i].role, content: msgs[i].content });
+    }
+  }
+  return out;
+}
+
+function sendChat(text){
+  if (!text) return;
+  if ($('chat-input')) $('chat-input').value = '';
+
+  addMsg('user', text);
+  S.chatHistory.push({ role:'user', content:text });
+  trimHistory();
+
+  if (!MY_AI_PROXY) {
+    var cfgHtml = '&#129504; El chat con IA todav&#237;a no est&#225; configurado.<br><br>' +
+                  'Sube <b>proxy-ai.php</b> a tu servidor y pon su ruta en <b>MY_AI_PROXY</b> ' +
+                  '(dentro del &#60;script&#62; del HTML) para activar a RecoveryIQ IA.<br><br>' +
+                  'Mientras tanto, el resto de la app funciona con normalidad.';
+    var cfgPlain = '🧠 El chat con IA todavía no está configurado. ' +
+                   'Sube proxy-ai.php a tu servidor y pon su ruta en MY_AI_PROXY ' +
+                   '(dentro del bloque de script del HTML) para activar a RecoveryIQ IA. ' +
+                   'Mientras tanto, el resto de la app funciona con normalidad.';
+    addMsg('ai', cfgHtml);
+    S.chatHistory.push({ role:'assistant', content:cfgPlain });
+    trimHistory();
+    return;
+  }
+
+  var typing = addTyping();
+
+  fetch(MY_AI_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 600,
+      system: buildSystemPrompt(),
+      messages: buildApiMessages()
+    })
+  }).then(function(res){
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }).then(function(data){
+    var txt = '';
+    if (data && data.content && data.content.length) {
+      for (var i = 0; i < data.content.length; i++) {
+        if (data.content[i].type === 'text') txt += data.content[i].text;
+      }
+    }
+    if (!txt) throw new Error('Respuesta vacía');
+    var html = text2html(txt);
+    updateMsg(typing, html);
+    S.chatHistory.push({ role:'assistant', content:txt });
+    trimHistory();
+  }).catch(function(e){
+    var m = 'No pude responder ahora mismo. Int&#233;ntalo de nuevo en unos segundos.';
+    if (String(e.message).indexOf('HTTP 401') >= 0) m = 'La API key de Anthropic no es v&#225;lida. Rev&#237;cala en proxy-ai.php.';
+    if (String(e.message).indexOf('HTTP 429') >= 0) m = 'Has superado el l&#237;mite de peticiones de la API. Espera un momento.';
+    updateMsg(typing, '&#9888;&#65039; ' + m);
+  });
+}
+
+function trimHistory(){
+  while (S.chatHistory.length > 40) S.chatHistory.shift();
+}
+
+function ensureWelcome(){
+  if (S.chatHistory.length || !S.data) return;
+  var t = S.data.today;
+  var frase;
+  if (t.recoveryScore >= 80)      frase = '🔥 Puedes atacar con confianza hoy.';
+  else if (t.recoveryScore >= 65) frase = '👍 Buen momento para entrenar con cabeza.';
+  else if (t.recoveryScore >= 50) frase = '🤫 Mejor bajar un poco el pistón.';
+  else                            frase = '😴 Hoy toca descanso de verdad.';
+  var msg = '¡Hola! 👋 Tu índice de hoy es ' + t.recoveryScore + '/100 (' +
+            scoreLabel(t.recoveryScore) + '). ' + frase;
+  S.chatHistory.push({ role:'assistant', content:msg });
+  addMsg('ai', text2html(msg), true);
+}
+
+/* ---------- 16. CICLO DE VIDA ---------- */
+function renderAll(){
+  renderDashboard();
+  renderCalendar();
+  renderReport();
+  renderLogHistory();
+  renderSettings();
+}
+
+function initApp(data){
+  S.data = data;
+  renderAll();
+  ensureWelcome();
+
+  var setup = $('setup-screen');
+  var app   = $('app-screen');
+  if (setup) setup.classList.remove('active');
+  if (app)   app.classList.add('active');
+
+  hideLoading();
+}
+
+function doConnect(){
+  var id  = ($('inp-athlete') ? $('inp-athlete').value : '').replace(/^\s+|\s+$/g, '');
+  var key = ($('inp-key') ? $('inp-key').value : '').replace(/^\s+|\s+$/g, '');
+
+  if (!id) { showErrorModal('Introduce tu <b>Athlete ID</b>.<br><br>Est&#225; en Intervals.icu &#8594; Perfil &#8594; Configuraci&#243;n. Empieza siempre por "i" (Ej: i1234567).'); return; }
+  if (!key) { showErrorModal('Introduce tu <b>API Key</b>.<br><br>Se genera en Intervals.icu &#8594; Perfil &#8594; Configuraci&#243;n &#8594; API.'); return; }
+
+  S.athleteId = id;
+  S.apiKey    = key;
+  S.isDemo    = false;
+  safeSet('riq_config', { athleteId: id, apiKey: key });
+
+  showLoading('Conectando con Intervals.icu&#8230;');
+  fetchData().then(function(d){
+    initApp(d);
+    showTab('dashboard');
+    showToast('&#9989; Conectado');
+  }).catch(function(e){
+    hideLoading();
+    showErrorModal(friendlyError(e));
+  });
+}
+
+function doSync(){
+  if (S.isDemo) {
+    showLoading('Actualizando datos demo&#8230;');
+    setTimeout(function(){
+      DEMO = buildDemo();
+      initApp(DEMO);
+      showToast('&#9989; Datos demo actualizados');
+    }, 350);
+    return;
+  }
+  if (!S.apiKey) { showToast('&#9888;&#65039; No hay credenciales guardadas'); return; }
+
+  showLoading('Sincronizando&#8230;');
+  fetchData().then(function(d){
+    initApp(d);
+    showToast('&#9989; Datos sincronizados');
+  }).catch(function(e){
+    hideLoading();
+    showErrorModal(friendlyError(e));
+  });
+}
+
+function doLogout(){
+  safeDel('riq_config');
+  S.athleteId = '';
+  S.apiKey    = '';
+  S.isDemo    = false;
+  S.data      = null;
+  S.chatHistory = [];
+  S.selectedDay = null;
+
+  var box = $('chat-msgs');
+  if (box) box.innerHTML = '';
+  resetLogForm();
+
+  if ($('inp-key')) $('inp-key').value = '';
+  if ($('inp-athlete')) $('inp-athlete').value = '';
+
+  var setup = $('setup-screen');
+  var app   = $('app-screen');
+  if (app)   app.classList.remove('active');
+  if (setup) setup.classList.add('active');
+
+  showTab('dashboard');
+  showToast('Sesi&#243;n cerrada');
+}
+
+function restoreSession(){
+  var cfg = safeGet('riq_config', null);
+  if (!cfg || !cfg.athleteId || !cfg.apiKey) return false;
+
+  S.athleteId = cfg.athleteId;
+  S.apiKey    = cfg.apiKey;
+  S.isDemo    = false;
+
+  if ($('inp-athlete')) $('inp-athlete').value = cfg.athleteId;
+  if ($('inp-key'))     $('inp-key').value = cfg.apiKey;
+
+  showLoading('Restaurando sesi&#243;n&#8230;');
+  fetchData().then(function(d){
+    initApp(d);
+    showToast('&#9989; Sesi&#243;n restaurada');
+  }).catch(function(e){
+    // Fallo al restaurar: limpiar y dejar el setup limpio
+    safeDel('riq_config');
+    S.apiKey = '';
+    if ($('inp-key')) $('inp-key').value = '';
+    hideLoading();
+    showErrorModal('No se pudo restaurar la sesi&#243;n.<br><br>' + friendlyError(e) +
+                    '<br><br>Revisa tu API Key o reconecta manualmente.');
+  });
+  return true;
+}
+
+/* ================================================================
+   17. EVENT LISTENERS  (sin DOMContentLoaded: el script es el último
+       elemento de <body> y cada listener va en su propio try/catch)
+   ================================================================ */
+
+/* Setup */
+wire('btn-connect', 'click', doConnect);
+wire('btn-demo', 'click', function(){
+  S.isDemo = true;
+  S.athleteId = 'demo';
+  S.apiKey = '';
+  showLoading('Cargando datos demo&#8230;');
+  setTimeout(function(){
+    DEMO = buildDemo();
+    initApp(DEMO);
+    showTab('dashboard');
+  }, 300);
+});
+wire('inp-key', 'keydown', function(e){ if (e.key === 'Enter' || e.keyCode === 13) doConnect(); });
+wire('inp-athlete', 'keydown', function(e){
+  if (e.key === 'Enter' || e.keyCode === 13) {
+    e.preventDefault();
+    var k = $('inp-key'); if (k) k.focus();
+  }
+});
+
+/* Top bar */
+wire('btn-sync', 'click', function(){
+  var b = $('btn-sync');
+  if (b) b.classList.add('spinning');
+  doSync();
+  setTimeout(function(){ if (b) b.classList.remove('spinning'); }, 1500);
+});
+wire('btn-settings', 'click', function(){ showTab('settings'); });
+
+/* Bottom nav */
+(function(){
+  var items = document.querySelectorAll('.nav-item[data-tab]');
+  for (var i = 0; i < items.length; i++) {
+    (function(el){
+      el.addEventListener('click', function(){ showTab(el.getAttribute('data-tab')); });
+    })(items[i]);
+  }
+})();
+
+/* Dashboard */
+wire('link-analysis', 'click', function(){ showTab('report'); });
+
+/* Calendario */
+wire('cal-prev', 'click', function(){
+  S.calM--;
+  if (S.calM < 0) { S.calM = 11; S.calY--; }
+  S.selectedDay = null;
+  var dd = $('day-detail'); if (dd) { dd.className = 'hidden'; dd.innerHTML = ''; }
+  renderCalendar();
+});
+wire('cal-next', 'click', function(){
+  S.calM++;
+  if (S.calM > 11) { S.calM = 0; S.calY++; }
+  S.selectedDay = null;
+  var dd = $('day-detail'); if (dd) { dd.className = 'hidden'; dd.innerHTML = ''; }
+  renderCalendar();
+});
+
+/* Rating rows (delegación en el padre) */
+(function(){
+  var rows = document.querySelectorAll('.rating-row');
+  for (var i = 0; i < rows.length; i++) {
+    (function(row){
+      row.addEventListener('click', function(e){
+        var btn = e.target.closest ? e.target.closest('.rating-btn') : null;
+        if (!btn) return;
+        var btns = row.querySelectorAll('.rating-btn');
+        for (var j = 0; j < btns.length; j++) btns[j].classList.remove('selected');
+        btn.classList.add('selected');
+      });
+    })(rows[i]);
+  }
+})();
+
+/* Tag rows (toggle con exclusión de "Ninguno") */
+(function(){
+  var rows = document.querySelectorAll('.tags-row');
+  for (var i = 0; i < rows.length; i++) {
+    (function(row){
+      row.addEventListener('click', function(e){
+        var btn = e.target.closest ? e.target.closest('.tag-btn') : null;
+        if (!btn) return;
+        var val = btn.getAttribute('data-val');
+        var wasOn = btn.classList.contains('selected');
+
+        if (row.getAttribute('data-field') === 'pains') {
+          var btns = row.querySelectorAll('.tag-btn');
+          if (val === 'Ninguno') {
+            for (var j = 0; j < btns.length; j++) btns[j].classList.remove('selected');
+            if (!wasOn) btn.classList.add('selected');
+            return;
+          }
+          for (j = 0; j < btns.length; j++) {
+            if (btns[j].getAttribute('data-val') === 'Ninguno') btns[j].classList.remove('selected');
+          }
+        }
+        btn.classList.toggle('selected');
+      });
+    })(rows[i]);
+  }
+})();
+
+/* Log / Settings / Report */
+wire('btn-save-log', 'click', saveLog);
+wire('settings-sync-btn', 'click', doSync);
+wire('btn-logout', 'click', doLogout);
+wire('btn-refresh-report', 'click', function(){
+  if (S.data) { renderReport(); showToast('&#9989; Informe actualizado'); }
+});
+
+/* IA Chat */
+wire('btn-send', 'click', function(){
+  var i = $('chat-input');
+  sendChat(i ? i.value.replace(/^\s+|\s+$/g, '') : '');
+});
+wire('chat-input', 'keydown', function(e){
+  if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey) {
+    e.preventDefault();
+    sendChat(this.value.replace(/^\s+|\s+$/g, ''));
+  }
+});
+(function(){
+  var pills = document.querySelectorAll('.quick-pill');
+  for (var i = 0; i < pills.length; i++) {
+    (function(btn){
+      btn.addEventListener('click', function(){ sendChat(btn.getAttribute('data-q')); });
+    })(pills[i]);
+  }
+})();
+
+/* ================================================================
+   18. ARRANQUE
+   ================================================================ */
+(function boot(){
+  S.logs = safeGet('riq_logs', []) || [];
+  if (Object.prototype.toString.call(S.logs) !== '[object Array]') S.logs = [];
+
+  var now = new Date();
+  S.calY = now.getFullYear();
+  S.calM = now.getMonth();
+
+  DEMO = buildDemo();
+  renderLogHistory();
+
+  restoreSession();
+})();
+</script>
+</body>
+</html>

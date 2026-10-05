@@ -1,0 +1,14 @@
+name = "recoveryiq-proxy"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Despliegue:
+#   npx wrangler login
+#   npx wrangler deploy
+#
+# La API key de Anthropic NO va aquí. Se guarda como secreto:
+#   npx wrangler secret put ANTHROPIC_API_KEY
+#
+# Después, en recovery-app.html:
+#   var MY_PROXY    = 'https://recoveryiq-proxy.<tu-subdomino>.workers.dev';
+#   var MY_AI_PROXY = 'https://recoveryiq-proxy.<tu-subdomino>.workers.dev/ai';
