@@ -91,7 +91,8 @@ eq(run('normalizeRows({wellness:[{id:"2026-01-01", sleep:7, hrv:50}]}).length'),
    'acepta envoltorio {wellness:[…]}');
 
 console.log('\n== Dashboard renderizado ==');
-run('S.logs = []; initApp(buildDemo()); showTab("dashboard");');
+// Como hace el botón «Modo demo» real: entra en demo ANTES de renderizar
+run('S.logs = []; S.isDemo = true; initApp(buildDemo()); showTab("dashboard");');
 eq($('score-num').textContent, '78', 'círculo con el 78');
 ok($('score-status').textContent.indexOf('Buena') >= 0, 'estado del círculo (78 → Buena)',
    $('score-status').textContent);
@@ -101,6 +102,10 @@ ok($('metrics-grid').textContent.indexOf('Sue') >= 0, 'hay tarjeta de Sueño');
 eq($('week-chart').children.length, 7, 'gráfico de 7 días');
 eq($('week-dots').children.length, 7, '7 puntos de la semana');
 ok($('insights-list').children.length > 0, 'hay conclusiones automáticas');
+ok($('sync-label').textContent.indexOf('Modo demo') >= 0,
+   'el rótulo de sincronización reconoce el modo demo', $('sync-label').textContent);
+ok($('sync-label').textContent.indexOf('Intervals.icu') < 0,
+   'y no finge que viene de Intervals.icu', $('sync-label').textContent);
 
 console.log('\n== Navegación por pestañas ==');
 ['calendar', 'report', 'ai', 'log', 'settings', 'dashboard'].forEach(t => {

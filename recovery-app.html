@@ -1124,7 +1124,7 @@ button{border:0; background:none; cursor:pointer; padding:0;}
           </div>
         </div>
         <div class="trend-pills" id="trend-pills"></div>
-        <div class="sync-label" id="sync-label"><span class="dot"></span> Sincronizado &#183; Intervals.icu</div>
+        <div class="sync-label" id="sync-label"><span class="dot"></span> Sin sincronizar</div>
       </div>
 
       <div class="chart-card">
@@ -2906,8 +2906,11 @@ function renderDashboard(){
   if ($('insights-list')) $('insights-list').innerHTML = html;
 
   if ($('sync-label')) {
+    // La fuente puede cambiar entre sesiones: el rótulo tiene que seguirla.
+    var srcName = S.source === 'garmin' ? 'Garmin Connect' : 'Intervals.icu';
     $('sync-label').innerHTML = '<span class="dot"></span> ' +
-      (S.isDemo ? 'Modo demo &#183; datos de ejemplo' : 'Sincronizado &#183; Intervals.icu');
+      (S.isDemo ? 'Modo demo &#183; datos de ejemplo'
+                : 'Sincronizado &#183; ' + srcName);
   }
 }
 

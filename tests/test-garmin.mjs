@@ -365,6 +365,20 @@ ok($('diag-hrv').innerHTML.indexOf('hoy <b>55</b>') >= 0,
 run('S.source = "intervals"; S.athleteId = "i1234567"; renderSettings();');
 eq($('diag-card').style.display, 'none', 'se oculta al volver a Intervals');
 
+console.log('\n== UI: el rótulo de sincronización sigue la fuente ==');
+run('(function(){var r=garminToRows(window.__payload);' +
+    'S.source="garmin"; S.isDemo=false;' +
+    'initApp(assembleData(r, garminActivities(window.__payload)));})()');
+ok($('sync-label').textContent.indexOf('Garmin Connect') >= 0,
+   'con Garmin dice «Garmin Connect»', $('sync-label').textContent);
+run('S.source="intervals"; renderDashboard();');
+ok($('sync-label').textContent.indexOf('Intervals.icu') >= 0,
+   'con Intervals dice «Intervals.icu»', $('sync-label').textContent);
+run('S.source="garmin"; S.isDemo=true; renderDashboard();');
+ok($('sync-label').textContent.indexOf('Modo demo') >= 0,
+   'en modo demo dice «Modo demo»', $('sync-label').textContent);
+run('S.isDemo=false;');
+
 console.log('\n== Errores amables con códigos de Garmin ==');
 [['BAD_CREDENTIALS', 'incorrectos'],
  ['RATE_LIMIT', 'limitado'],
