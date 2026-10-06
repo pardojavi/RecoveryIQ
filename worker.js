@@ -599,6 +599,7 @@ async function garminSync(body) {
         '&metric=activityTrainingLoad'),
     get('/activitylist-service/activities/search/activities?start=0&limit=20' +
         '&startDate=' + start + '&endDate=' + end),
+    get('/weight-service/weight/dateRange?startDate=' + start + '&endDate=' + end),
     ...sleepChunks.map(([a, b]) => get('/sleep-service/stats/sleep/daily/' + a + '/' + b)),
   ];
 
@@ -671,6 +672,40 @@ async function garminSync(body) {
     return (x.calendarDate && (x.sleepTimeSeconds || x.deepSleepSeconds)) ? 1 : 0;
   };
 
+  // Composición corporal: localiza el primer registro CON FECHA (para no
+  // confundirlo con totalAverage, que es la media del rango entero).
+  const weightRowOf = (x) => {
+    if (!x || typeof x !== 'object') return null;
+    if (Array.isArray(x)) return x.length ? weightRowOf(x[0]) : null;
+    if (x.dateWeight && typeof x.dateWeight === 'object') return x.dateWeight;
+    if (x.dailyWeightSummaries) return weightRowOf(x.dailyWeightSummaries);
+    if (x.weightSummaries) return weightRowOf(x.weightSummaries);
+    if (x.dateWeightList) return weightRowOf(x.dateWeightList);
+    if (x.bodyComposition) return weightRowOf(x.bodyComposition);
+    if (x.calendarDate || x.date) return x;
+    return null;
+  };
+  const rowsOfWeight = (x) => {
+    if (!x || typeof x !== 'object') return 0;
+    if (Array.isArray(x)) return x.length;
+    if (Array.isArray(x.dailyWeightSummaries)) return x.dailyWeightSummaries.length;
+    if (Array.isArray(x.weightSummaries)) return x.weightSummaries.length;
+    if (Array.isArray(x.dateWeightList)) return x.dateWeightList.length;
+    return weightRowOf(x) ? 1 : 0;
+  };
+  const kindOfWeight = (x) => {
+    if (x === null || x === undefined) return 'sin-cuerpo';
+    if (typeof x !== 'object') return typeof x;
+    const r = weightRowOf(x);
+    if (r) {
+      const n = rowsOfWeight(x);
+      const k = Object.keys(r).filter(n2 => n2 !== 'dateWeight').slice(0, 12).join(',');
+      return 'filas(' + n + '){' + k + '}';
+    }
+    const k = Object.keys(x);
+    return k.slice(0, 6).join(',') || 'objeto-vacío';
+  };
+
   // Se devuelven los JSON SIN tocar. Toda la interpretación de "cápsulas"
   // (array plano, {data:[…]}, {hrvData:[{hrvSummary:{…}}]}, trozos de sueño…)
   // vive en la app, que es donde está cubierta por los tests de normalización.
@@ -678,8 +713,9 @@ async function garminSync(body) {
   const rhr = await jsonOf(results[1], null);
   const load = await jsonOf(results[2], null);
   const activities = await jsonOf(results[3], null);
+  const weight = await jsonOf(results[4], null);
   const sleep = [];
-  for (let i = 0; i < sleepChunks.length; i++) sleep.push(await jsonOf(results[4 + i], null));
+  for (let i = 0; i < sleepChunks.length; i++) sleep.push(await jsonOf(results[5 + i], null));
 
   // Si el endpoint por rango no ha traído NI UN día de sueño, se reintenta con
   // el endpoint de un solo día (el que usa python-garminconnect: get_sleep_data)
@@ -713,14 +749,16 @@ async function garminSync(body) {
   // Diagnóstico: qué devolvió cada endpoint. La app lo guarda y lo muestra en
   // Ajustes, para poder corregirlo sin adivinar.
   const statusOf = (i) => (results[i] && results[i].status) || 0;
+  const weightRows = rowsOfWeight(weight);
   const diag = {
     hrv:  { s: statusOf(0), k: kindOf(hrv) },
     rhr:  { s: statusOf(1), k: kindOf(rhr) },
     load: { s: statusOf(2), k: kindOf(load) },
     acts: { s: statusOf(3), k: kindOf(activities) },
+    weight: { s: statusOf(4), k: kindOfWeight(weight), n: weightRows },
     sleep: sleepChunks.map((c, i) => ({
       c: c[0].slice(5) + '/' + c[1].slice(5),
-      s: statusOf(4 + i),
+      s: statusOf(5 + i),
       k: kindOfSleep(sleep[i]),
     })),
     sleepRangeRows,
@@ -735,7 +773,7 @@ async function garminSync(body) {
     start,
     end,
     diag,
-    data: { hrv, rhr, load, sleep, activities },
+    data: { hrv, rhr, load, sleep, activities, weight },
   });
 }
 

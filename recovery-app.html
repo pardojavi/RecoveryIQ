@@ -435,6 +435,7 @@ button{border:0; background:none; cursor:pointer; padding:0;}
   border-radius:var(--r);
   padding:15px 14px;
 }
+.metric.span2{grid-column:1 / -1;}
 .metric-top{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
 .metric-ico{
   width:28px; height:28px;
@@ -497,6 +498,17 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 .sl-chip.up{color:var(--green); border-color:rgba(34,211,160,.35);}
 .sl-chip.down{color:var(--red); border-color:rgba(248,113,113,.35);}
 .sl-chip.flat{color:var(--text3);}
+.sl-sub{
+  font-size:11px; font-weight:600; color:var(--text3);
+  text-transform:uppercase; letter-spacing:.6px;
+  margin-top:16px; margin-bottom:8px;
+}
+.spark{display:block; width:100%; height:70px;}
+.spark-legend{
+  display:flex; justify-content:space-between;
+  font-size:11px; color:var(--text3); margin-top:5px;
+}
+.spark-legend b{color:var(--text2); font-weight:600;}
 .sl-note{
   font-size:11.5px; color:var(--text3); line-height:1.55;
   margin-top:14px; padding:10px 11px;
@@ -1305,6 +1317,10 @@ button{border:0; background:none; cursor:pointer; padding:0;}
           <span class="v" id="diag-rhr">&#8212;</span>
         </div>
         <div class="set-row">
+          <span class="k">Peso</span>
+          <span class="v" id="diag-weight">&#8212;</span>
+        </div>
+        <div class="set-row">
           <span class="k">Actividades</span>
           <span class="v" id="diag-acts">&#8212;</span>
         </div>
@@ -1458,6 +1474,12 @@ function parseYmd(s){
 }
 
 function todayKey(){ return ymd(new Date()); }
+
+/* 2026-10-05 → "5 oct" (para decir desde cu&#225;ndo es el &#250;ltimo dato) */
+function shortDate(key){
+  var d = parseYmd(key);
+  return d.getDate() + ' ' + MONTHS_SHORT[d.getMonth()];
+}
 
 function shiftDays(d, n){
   var x = new Date(d.getTime());
@@ -1690,7 +1712,8 @@ function assembleData(rows, activities){
       ctl:       ctl,
       atl:       atl,
       tsb:       Math.round((ctl - atl) * 10) / 10,
-      score:     calcScore(r)
+      score:     calcScore(r),
+      body:      r.body || null
     };
   }
 
@@ -1703,8 +1726,29 @@ function assembleData(rows, activities){
   var endKey = dailyMap[tk] ? tk : keys[keys.length - 1];
   var t = dailyMap[endKey];
 
+  /* Composici&#243;n corporal: media de la ventana, &#250;ltimo registro v&#225;lido y
+     comparaci&#243;n con la media (el peso no tiene por qu&#233; venir hoy). */
+  var wSum = 0, wN = 0, wLast = null, wLastKey = '';
+  for (i = 0; i < keys.length; i++) {
+    var wb = dailyMap[keys[i]].body;
+    if (wb && wb.weight) {
+      wSum += wb.weight; wN++;
+      wLast = wb; wLastKey = keys[i];
+    }
+  }
+  var wAvg = wN ? round1(wSum / wN) : 0;
+  // Cuerpo del d&#237;a si lo trae; si no, el &#250;ltimo con peso (una b&#225;scula no
+  // pesa todos los d&#237;as y no queremos una raya en la portada).
+  var curBody = (t.body && t.body.weight) ? t.body : wLast;
+
   var today = {
     date:                endKey,
+    body:                curBody,
+    bodyDate:            curBody ? ((t.body && t.body.weight) ? endKey : wLastKey) : '',
+    weight:              curBody ? curBody.weight : null,
+    weightBaseline:      wAvg,
+    weightChange:        (wLast && wAvg) ? round1(wLast.weight - wAvg) : 0,
+    bodyFat:             curBody ? (curBody.bodyFat || null) : null,
     hrv:                 t.hrv,
     hrvBaseline:         round1(avgHRV),
     hrvChange:           avgHRV ? round1(((t.hrv || avgHRV) - avgHRV) / avgHRV * 100) : 0,
@@ -1926,12 +1970,13 @@ function sleepDiagCell(list, fallback){
 function garminDiag(r, rows, acts){
   var d = r.diag || null;
   var today = ymd(new Date()), i;
-  var hrvDays = 0, sleepDays = 0, rhrDays = 0;
+  var hrvDays = 0, sleepDays = 0, rhrDays = 0, bodyDays = 0;
   var tHrv = null, tSleep = null, tRhr = null;
   for (i = 0; i < rows.length; i++) {
     if (rows[i].hrv) hrvDays++;
     if (rows[i].sleep !== null) sleepDays++;
     if (rows[i].restingHR) rhrDays++;
+    if (rows[i].body && rows[i].body.weight) bodyDays++;
     if (rows[i].id === today) {
       tHrv = rows[i].hrv; tSleep = rows[i].sleep; tRhr = rows[i].restingHR;
     }
@@ -1939,13 +1984,14 @@ function garminDiag(r, rows, acts){
   return {
     start: r.start || '', end: r.end || '',
     days: rows.length,
-    hrvDays: hrvDays, sleepDays: sleepDays, rhrDays: rhrDays,
+    hrvDays: hrvDays, sleepDays: sleepDays, rhrDays: rhrDays, bodyDays: bodyDays,
     actsCount: (acts && acts.length) || 0,
     todayHrv: tHrv, todaySleep: tSleep, todayRhr: tRhr,
     hrv:  (d && d.hrv)  || null,
     rhr:  (d && d.rhr)  || null,
     load: (d && d.load) || null,
     act:  (d && d.acts) || null,
+    weight: (d && d.weight) || null,
     sleep: sleepDiagCell(d && d.sleep, d && d.sleepDay)
   };
 }
@@ -2071,11 +2117,11 @@ function sleepDay(s){
   return '';
 }
 
-/* Las filas de /sleep-service/stats/sleep/daily traen los datos dentro de un
-   subobjeto `values` (totalSleepTimeInSeconds, deepTime, lightTime, remTime,
-   awakeTime, localSleepEndTimeInMillis…). Se aplanan a un solo nivel para que
-   el normalizador no tenga que conocer cada c&#225;psula. */
-function flattenSleep(rec){
+/* Los endpoints por rango de Garmin anidan las m&#233;tricas dentro de un
+   subobjeto (`values` en sleep-service, `dateWeight` u otro en weight-service).
+   Se aplana un solo nivel, sin tocar arrays, para que el normalizador no
+   tenga que conocer cada c&#225;psula. Lo de arriba manda sobre lo de abajo. */
+function flattenObj(rec){
   if (!rec || typeof rec !== 'object') return rec;
   if (Object.prototype.toString.call(rec) === '[object Array]') return rec;
   var nested = [], k, v, i, out;
@@ -2094,6 +2140,83 @@ function flattenSleep(rec){
     }
   }
   return out;
+}
+
+/* Fecha de un registro de composici&#243;n corporal: admite ISO o epoch (algunos
+   weigh-in solo traen `weighInTimeInMillis`). */
+function bodyDate(o){
+  var d = garminDate(o);
+  if (d) return d;
+  if (!o || typeof o !== 'object') return '';
+  var k, n, dt;
+  for (k in o) {
+    if (!o.hasOwnProperty(k)) continue;
+    if (!/time|date/i.test(k)) continue;
+    if (/birth|create|update|modified|end/i.test(k)) continue;
+    n = parseInt(o[k], 10);
+    if (!isFinite(n) || n <= 0) continue;
+    if (n > 1e9 && n <= 1e11) n = n * 1000;   // segundos → ms
+    if (n <= 1e11 || n >= 1e14) continue;     // no parece un epoch en ms
+    dt = new Date(n);
+    if (isNaN(dt.getTime())) continue;
+    return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+  }
+  return '';
+}
+
+/* ---------- composici&#243;n corporal (weight-service) ---------- */
+function numField(o, keys){
+  for (var i = 0; i < keys.length; i++) {
+    var v = numv(o[keys[i]]);
+    if (v) return v;
+  }
+  return 0;
+}
+function toKg(v){  return v > 100 ? Math.round(v) / 1000 : v; }  // gramos → kg
+function toPct(v){ return (v > 0 && v < 1) ? v * 100 : v; }       // 0.185 → 18.5
+function r1(v){ return Math.round(v * 10) / 10; }
+
+/* Saca lo que haya en un registro de composici&#243;n corporal. No exige todos
+   los campos: la b&#225;scula solo da peso, y eso ya vale para la tarjeta. */
+/* Campos reales de weight-service (verificados en 5 clientes + una grabaci&#243;n
+   en crudo): weight, bodyFat, bodyWater, muscleMass, boneMass, visceralFat,
+   bmi, metabolicAge — en gramos y porcentaje 0&#8211;100. El resto son alias por
+   si Garmin (o otro origen) los trae con otro nombre. */
+function isBodyWrap(o){
+  var k, v;
+  for (k in o) {
+    if (!o.hasOwnProperty(k)) continue;
+    v = o[k];
+    if (!v || typeof v !== 'object') continue;
+    if (Object.prototype.toString.call(v) === '[object Array]') return true;
+    return true; // subobjeto suelto (totalAverage, latestWeight…)
+  }
+  return false;
+}
+
+function pickBody(o){
+  var b = {}, v;
+  v = numField(o, ['weight','weightKg','weightInKg','userWeight','avgWeight']);
+  if (v) b.weight = r1(v > 300 ? v / 1000 : v);
+  v = numField(o, ['bodyFat','percentFat','bodyFatPercentage','fatPercent']);
+  if (v) b.bodyFat = r1(toPct(v));
+  v = numField(o, ['muscleMass','muscleMassKg','leanBodyMass','fatFreeMass','massLBM']);
+  if (v) b.muscle = r1(toKg(v));
+  v = numField(o, ['bodyWater','percentHydration','hydration','percentWater']);
+  if (v) b.water = r1(toPct(v));
+  v = numField(o, ['boneMass','boneMassKg']);
+  if (v) b.bone = r1(toKg(v));
+  v = numField(o, ['visceralFat','visceralFatMass']);
+  if (v) b.visceral = r1(toKg(v));
+  v = numField(o, ['visceralFatRating','visceralFatLevel']);
+  if (v) b.visceralRating = Math.round(v);
+  v = numField(o, ['bmi','bodyMassIndex']);
+  if (v) b.bmi = r1(v);
+  v = numField(o, ['metabolicAge']);
+  if (v) b.metAge = Math.round(v);
+  v = numField(o, ['basalMet','bmr','basalMetabolicRate']);
+  if (v) b.bmr = Math.round(v);
+  return b;
 }
 
 /* Carga diaria = suma del activityTrainingLoad de cada actividad.
@@ -2144,7 +2267,8 @@ function garminToRows(g){
   function row(id){
     if (!id) return null;
     if (!rows[id]) {
-      rows[id] = { id:id, hrv:null, restingHR:null, sleep:null, stages:null, ctl:0, atl:0 };
+      rows[id] = { id:id, hrv:null, restingHR:null, sleep:null, stages:null,
+                   ctl:0, atl:0, body:null };
       ids.push(id);
     }
     return rows[id];
@@ -2192,7 +2316,7 @@ function garminToRows(g){
     var rec = srec[i] || {};
     if (Object.prototype.toString.call(rec) === '[object Array]') continue;
     var s = (rec.dailySleepDTO && typeof rec.dailySleepDTO === 'object') ? rec.dailySleepDTO : rec;
-    s = flattenSleep(s);
+    s = flattenObj(s);
     if (!s || typeof s !== 'object') continue;
     var id3 = sleepDay(s) || garminDate(s) || garminDate(rec);
     if (!id3) continue;
@@ -2226,6 +2350,32 @@ function garminToRows(g){
     if (rh && !r3.restingHR) r3.restingHR = Math.round(rh);
   }
 
+  /* Composici&#243;n corporal: peso, grasa, masa magra, agua, hueso, visceral,
+     IMC, edad metab&#243;lica y metabolismo basal. Cualquier c&#225;psula sirve:
+     se aplana y se filtra por registros que tengan D&#237;A y alg&#250;n valor, as&#237;
+     que `totalAverage` (media del rango, sin fecha) se descarta solo. */
+  var brec = recordsOf(g.weight);
+  for (i = 0; i < brec.length; i++) {
+    var br = flattenObj(brec[i]);
+    if (!br || typeof br !== 'object') continue;
+    if (Object.prototype.toString.call(br) === '[object Array]') continue;
+    // Solo registros "planos": un envoltorio lleva arrays y subobjetos (p. ej.
+    // {startDate, endDate, dateWeightList:[…], totalAverage:{…}}). Sin este
+    // filtro, la MEDIA del rango se colaría con la fecha de inicio y taparía
+    // los datos reales de cada día.
+    if (isBodyWrap(br)) continue;
+    var id4 = bodyDate(br);
+    if (!id4) continue;
+    var got = pickBody(br), gk, gotN = 0;
+    for (gk in got) { if (got.hasOwnProperty(gk) && got[gk]) gotN++; }
+    if (!gotN) continue;
+    var rb = row(id4);
+    if (!rb) continue;
+    // Se queda con el registro M&#225;s completo del d&#237;a (la cápsula con peso solo
+    // no tapa a la que trae grasa, músculo e IMC).
+    if (!rb.body || (rb.bodyN || 0) < gotN) { rb.body = got; rb.bodyN = gotN; }
+  }
+
   /* Carga → CTL/ATL */
   var lm = garminLoadMap(g);
   if (lm.has && ids.length) {
@@ -2241,7 +2391,7 @@ function garminToRows(g){
   var out = [];
   for (i = 0; i < ids.length; i++) {
     var r = rows[ids[i]];
-    if (r.hrv || r.restingHR || r.sleep !== null) out.push(r);
+    if (r.hrv || r.restingHR || r.sleep !== null || r.body) out.push(r);
   }
   return out;
 }
@@ -2372,6 +2522,135 @@ function showSleepDetail(){
           'Intervals.icu solo informa del total. Si sincronizas un dispositivo que s&#237; lo ' +
           'reporte, ver&#225;s aqu&#237; los valores reales.</div>'
         : '<div class="sl-note">&#10004; Reparto por fases informado por tu dispositivo.</div>');
+  }
+
+  ov.innerHTML =
+    '<div class="sheet">' +
+      '<div class="sheet-handle"></div>' +
+      title + body +
+      '<button class="btn-primary sheet-close">Cerrar</button>' +
+    '</div>';
+
+  function close(){ if (ov.parentNode) ov.parentNode.removeChild(ov); }
+  ov.addEventListener('click', function(e){
+    if (e.target === ov) close();
+    if (e.target && e.target.className && String(e.target.className).indexOf('sheet-close') >= 0) close();
+  });
+  document.body.appendChild(ov);
+}
+
+/* ---------- Detalle de composici&#243;n corporal (tapa en el cuadro de Peso) ---------- */
+var BODY_ROWS = [
+  { k:'bodyFat',        label:'Grasa corporal',      unit:'%',        c:'#fbbf24' },
+  { k:'muscle',         label:'Masa magra',          unit:'kg',       c:'#60a5fa' },
+  { k:'water',          label:'Hidrataci&#243;n',    unit:'%',        c:'#38bdf8' },
+  { k:'bone',           label:'Masa &#243;sea',      unit:'kg',       c:'#a78bfa' },
+  { k:'visceral',       label:'Grasa visceral',      unit:'kg',       c:'#f87171' },
+  { k:'visceralRating', label:'Nivel visceral',      unit:'',         c:'#fb7185' },
+  { k:'bmi',            label:'IMC',                 unit:'',         c:'#94a3b8' },
+  { k:'metAge',         label:'Edad metab&#243;lica',unit:'a&#241;os',c:'#f472b6' },
+  { k:'bmr',            label:'Metabolismo basal',   unit:'kcal',     c:'#2dd4bf' }
+];
+
+/* Mini-gr&#225;fica de evoluci&#243;n del peso con los &#250;ltimos 30 registros */
+function bodySpark(){
+  if (!S.data || !S.data.dailyMap) return '';
+  var dm = S.data.dailyMap, ks = [], i, w, sum = 0;
+  for (var k in dm) {
+    if (dm.hasOwnProperty(k) && dm[k].body && dm[k].body.weight) ks.push(k);
+  }
+  ks.sort();
+  if (ks.length < 4) return '';
+  ks = ks.slice(-30);
+
+  var min = 1e9, max = -1e9;
+  for (i = 0; i < ks.length; i++) {
+    w = dm[ks[i]].body.weight;
+    sum += w;
+    if (w < min) min = w;
+    if (w > max) max = w;
+  }
+  var span = (max - min) || 1;
+  var W = 300, H = 70, pad = 9;
+  var d = '', first = true, x, y;
+  for (i = 0; i < ks.length; i++) {
+    w = dm[ks[i]].body.weight;
+    x = pad + (i / (ks.length - 1)) * (W - 2 * pad);
+    y = pad + (1 - (w - min) / span) * (H - 2 * pad);
+    d += (first ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+    first = false;
+  }
+  var area = 'M' + pad + ' ' + (H - pad) + ' L' + d.slice(1) +
+             'L' + (W - pad) + ' ' + (H - pad) + ' Z';
+
+  return '<div class="sl-sub">Evoluci&#243;n &#183; &#250;ltimos ' + ks.length + ' registros</div>' +
+         '<svg class="spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+           '<path d="' + area + '" fill="#22d3a0" fill-opacity=".12"></path>' +
+           '<path d="' + d + '" fill="none" stroke="#22d3a0" stroke-width="2" ' +
+                 'stroke-linejoin="round" stroke-linecap="round" ' +
+                 'vector-effect="non-scaling-stroke"></path>' +
+         '</svg>' +
+         '<div class="spark-legend">' +
+           '<span>M&#237;n <b>' + round1(min) + '</b> kg</span>' +
+           '<span>Media <b>' + round1(sum / ks.length) + '</b> kg</span>' +
+           '<span>M&#225;x <b>' + round1(max) + '</b> kg</span>' +
+         '</div>';
+}
+
+function showWeightDetail(){
+  var ov = document.createElement('div');
+  ov.className = 'sheet-overlay';
+
+  var title = '<div class="sheet-title">Composici&#243;n corporal</div>';
+  var body  = '';
+
+  if (S.data && S.data.today && S.data.today.weight) {
+    var t = S.data.today, b = t.body || {};
+    var fd = parseYmd(t.bodyDate || t.date);
+    var fecha = DOW_FULL[fd.getDay()] + ' ' + fd.getDate() + ' de ' +
+                MONTHS[fd.getMonth()].toLowerCase();
+
+    var rows = '', i, f;
+    for (i = 0; i < BODY_ROWS.length; i++) {
+      f = BODY_ROWS[i];
+      if (!b[f.k]) continue;
+      rows += '<div class="sl-row">' +
+                '<span class="sl-dot" style="background:' + f.c + '"></span>' +
+                '<span class="sl-name">' + f.label + '</span>' +
+                '<span class="sl-h">' + b[f.k] + (f.unit ? ' ' + f.unit : '') + '</span>' +
+              '</div>';
+    }
+    if (!rows) rows = '<div class="sl-row"><span class="sl-name">Solo peso registrado</span></div>';
+
+    var chips = '';
+    if (t.weightBaseline) {
+      var chg = t.weightChange;
+      var cls = chg > 0.15 ? 'flat' : (chg < -0.15 ? 'up' : 'flat');
+      chips += '<span class="sl-chip ' + cls + '">vs tu media ' +
+               (chg > 0 ? '+' : '') + chg + ' kg</span>';
+      chips += '<span class="sl-chip">Media <b>' + t.weightBaseline + '</b> kg</span>';
+    }
+    if (b.bodyFat) {
+      chips += '<span class="sl-chip ' + (b.bodyFat <= 20 ? 'up' : (b.bodyFat <= 25 ? 'flat' : 'down')) +
+               '">Grasa <b>' + b.bodyFat + '</b>%</span>';
+    }
+    if (b.bmi) {
+      chips += '<span class="sl-chip ' + (b.bmi >= 18.5 && b.bmi <= 25 ? 'up' : 'flat') +
+               '">IMC <b>' + b.bmi + '</b></span>';
+    }
+
+    var nota = (t.bodyDate && t.bodyDate !== t.date)
+      ? '<div class="sl-note">&#9888;&#65039; Este es el <b>&#250;ltimo registro</b> de tu b&#225;scula ' +
+        '(' + shortDate(t.bodyDate) + '), a&#250;n no hay datos de hoy.</div>'
+      : '<div class="sl-note">&#10004; Datos del d&#237;a. Se actualizan al sincronizar con Garmin Connect.</div>';
+
+    body =
+      '<div class="sl-date">' + fecha + '</div>' +
+      '<div class="sl-total"><b>' + t.weight + '</b><small>kg</small></div>' +
+      '<div class="sl-rows">' + rows + '</div>' +
+      '<div class="sl-chips">' + chips + '</div>' +
+      bodySpark() +
+      nota;
   }
 
   ov.innerHTML =
@@ -2581,6 +2860,26 @@ function renderDashboard(){
   var mTsb = Math.round(clamp((t.tsb + 20) / 40 * 100, 4, 100));
   var cTsb = t.tsb < -10 ? 'var(--red)' : (t.tsb > 5 ? 'var(--green)' : 'var(--yellow)');
 
+  /* Peso: solo se pinta si hay dato (Intervals.icu no lo trae) */
+  var wCard = '';
+  if (t.weight) {
+    var parts = [], mW = 0, cW = 'var(--green)';
+    if (t.bodyFat) {
+      parts.push('Grasa ' + t.bodyFat + '%');
+      mW = Math.round(clamp(100 - t.bodyFat, 4, 100));
+      cW = t.bodyFat <= 20 ? 'var(--green)' : (t.bodyFat <= 25 ? 'var(--yellow)' : 'var(--red)');
+    }
+    if (t.body && t.body.muscle) parts.push('Magra ' + t.body.muscle + ' kg');
+    if (t.body && t.body.bmi)    parts.push('IMC ' + t.body.bmi);
+    if (t.weightBaseline) {
+      parts.push((t.weightChange > 0 ? '+' : '') + t.weightChange + ' kg vs media');
+    }
+    var wSub = parts.join(' &#183; ');
+    if (t.bodyDate && t.bodyDate !== t.date) wSub += ' &#183; &#250;lt. ' + shortDate(t.bodyDate);
+    wCard = metricCard('&#9878;&#65039;', 'Peso', t.weight, 'kg', wSub || 'Sin desglose',
+                       mW, cW, 'data-metric="weight"', 'span2');
+  }
+
   $('metrics-grid') && ($('metrics-grid').innerHTML =
     metricCard('&#128147;', 'HRV', t.hrv ? t.hrv : '&#8211;', 'ms',
                t.hrv ? 'Baseline ' + t.hrvBaseline + ' ms' : 'Sin datos', mHrv, 'var(--accent2)') +
@@ -2590,7 +2889,8 @@ function renderDashboard(){
                t.sleep !== null ? '&#211;ptimo 7&#8211;9 h' : 'Sin datos', mSlp, 'var(--blue)',
                'data-metric="sleep"') +
     metricCard('&#9889;', 'TSB', (t.tsb > 0 ? '+' : '') + t.tsb, '',
-               'CTL ' + t.ctl + ' &#183; ATL ' + t.atl, mTsb, cTsb)
+               'CTL ' + t.ctl + ' &#183; ATL ' + t.atl, mTsb, cTsb) +
+    wCard
   );
 
   /* Insights */
@@ -2611,8 +2911,8 @@ function renderDashboard(){
   }
 }
 
-function metricCard(ico, label, val, unit, sub, pct, color, dataAttr){
-  return '<div class="metric' + (dataAttr ? ' tappable' : '') + '"' +
+function metricCard(ico, label, val, unit, sub, pct, color, dataAttr, cls){
+  return '<div class="metric' + (dataAttr ? ' tappable' : '') + (cls ? ' ' + cls : '') + '"' +
            (dataAttr ? ' ' + dataAttr : '') + '>' +
            '<div class="metric-top"><div class="metric-ico">' + ico + '</div>' +
            '<div class="metric-label">' + label + '</div>' +
@@ -2760,6 +3060,17 @@ function showDayDetail(key){
     html += row('HRV', (d.hrv || '&#8211;') + ' ms');
     html += row('FC reposo', (d.restingHR || '&#8211;') + ' bpm');
     html += row('Sue&#241;o', (d.sleep !== null ? fmtSleep(d.sleep) + ' h' : '&#8211;'));
+    if (d.body && d.body.weight) {
+      html += row('Peso', d.body.weight + ' kg');
+      if (d.body.bodyFat) html += row('Grasa corporal', d.body.bodyFat + ' %');
+      if (d.body.muscle)  html += row('Masa magra', d.body.muscle + ' kg');
+      if (d.body.water)   html += row('Hidrataci&#243;n', d.body.water + ' %');
+      if (d.body.bone)    html += row('Masa &#243;sea', d.body.bone + ' kg');
+      if (d.body.visceral)html += row('Grasa visceral', d.body.visceral + ' kg');
+      if (d.body.bmi)     html += row('IMC', d.body.bmi);
+      if (d.body.metAge)  html += row('Edad metab&#243;lica', d.body.metAge + ' a&#241;os');
+      if (d.body.bmr)     html += row('Metabolismo basal', d.body.bmr + ' kcal');
+    }
     html += row('CTL', d.ctl);
     html += row('ATL', d.atl);
     html += row('TSB', (d.tsb > 0 ? '+' : '') + d.tsb, d.tsb < -10 ? '#f87171' : (d.tsb > 5 ? '#22d3a0' : null));
@@ -3111,7 +3422,8 @@ function renderSettings(){
       if ($('diag-counts')) $('diag-counts').innerHTML =
         (dg.days || 0) + ' d&#237;as &#183; HRV ' + (dg.hrvDays || 0) +
         ' &#183; sue&#241;o ' + (dg.sleepDays || 0) +
-        ' &#183; FC ' + (dg.rhrDays || 0);
+        ' &#183; FC ' + (dg.rhrDays || 0) +
+        ' &#183; peso ' + (dg.bodyDays || 0);
       if ($('diag-hrv')) $('diag-hrv').innerHTML = diagCell(dg.hrv) +
         (dg.todayHrv ? ' &#183; hoy <b>' + dg.todayHrv + '</b>' : ' &#183; hoy sin dato');
       if ($('diag-sleep')) $('diag-sleep').innerHTML = diagCell(dg.sleep) +
@@ -3120,6 +3432,11 @@ function renderSettings(){
            : ' &#183; hoy sin dato');
       if ($('diag-rhr')) $('diag-rhr').innerHTML = diagCell(dg.rhr) +
         (dg.todayRhr ? ' &#183; hoy <b>' + dg.todayRhr + '</b>' : ' &#183; hoy sin dato');
+      if ($('diag-weight')) $('diag-weight').innerHTML =
+        diagCell(dg.weight) +
+        (dg.weight && dg.weight.n != null ? ' &#183; <b>' + dg.weight.n + '</b> r' :
+          (dg.bodyDays ? ' &#183; <b>' + dg.bodyDays + '</b> d' : '')) +
+        (dg.bodyDays ? '' : ' &#183; sin peso');
       if ($('diag-acts')) $('diag-acts').innerHTML =
         (dg.actsCount || 0) + ' &#183; ' + diagCell(dg.act);
     }
@@ -3176,7 +3493,13 @@ function buildSystemPrompt(){
             fmtSleep(t.sleepDetail.awake) + ' h' +
             (t.sleepDetail.estimated ? '; reparto por fases estimado' : '') + ')'
           : '') + '. ' +
-      'CTL: ' + t.ctl + ', ATL: ' + t.atl + ', TSB: ' + t.tsb + '.'
+      'CTL: ' + t.ctl + ', ATL: ' + t.atl + ', TSB: ' + t.tsb + '.' +
+      (t.weight
+        ? ' Peso: ' + t.weight + ' kg' +
+          (t.bodyFat ? ' (grasa ' + t.bodyFat + '%)' : '') +
+          (t.body && t.body.muscle ? ', masa magra ' + t.body.muscle + ' kg' : '') +
+          (t.weightBaseline ? ', media ' + t.weightBaseline + ' kg' : '') + '.'
+        : '')
     : 'Sin datos disponibles.';
 
   var logLine = '';
@@ -3587,6 +3910,10 @@ wire('metrics-grid', 'click', function(e){
   while (el && el !== this) {
     if (el.getAttribute && el.getAttribute('data-metric') === 'sleep') {
       showSleepDetail();
+      return;
+    }
+    if (el.getAttribute && el.getAttribute('data-metric') === 'weight') {
+      showWeightDetail();
       return;
     }
     el = el.parentNode;

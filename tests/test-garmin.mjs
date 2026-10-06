@@ -21,7 +21,7 @@ const dayKey = i => { const d = new Date(); d.setDate(d.getDate() - i); return k
 
 function makePayload(opts) {
   opts = opts || {};
-  const hrv = [], rhr = [], sleep = [], load = [], activities = [];
+  const hrv = [], rhr = [], sleep = [], load = [], activities = [], weightList = [];
   const n = opts.days || 60;
   for (let i = 0; i < n; i++) {
     const key = dayKey(i);
@@ -33,6 +33,26 @@ function makePayload(opts) {
       deepSleepSeconds: 5400, lightSleepSeconds: 12600,
       remSleepSeconds: 7200, awakeSleepSeconds: 1800
     });
+    // Peso real de weight-service: TODO en gramos, porcentajes 0-100.
+    if (!opts.noWeight) {
+      weightList.push({
+        samplePk: 1749996902851 + i,
+        date: Date.now() - i * 86400000,
+        calendarDate: key,
+        weight: 70000 + (i % 7) * 500,
+        bmi: 22.4,
+        bodyFat: 18.5,
+        bodyWater: 58.9,
+        boneMass: 3400,
+        muscleMass: 33000,
+        physiqueRating: null,
+        visceralFat: 1.2,
+        metabolicAge: 31,
+        sourceType: 'INDEX_SCALE',
+        timestampGMT: Date.now() - i * 86400000,
+        weightDelta: 500
+      });
+    }
     if (i % 2 === 0 && !opts.noLoad) {
       load.push({ startDateLocal: key + ' 08:00:00', activityTrainingLoad: 80 });
       activities.push({
@@ -44,7 +64,18 @@ function makePayload(opts) {
   return {
     hrv,
     rhr: { allMetrics: { metricsMap: { WELLNESS_RESTING_HEART_RATE: rhr } } },
-    load, sleep, activities
+    load, sleep, activities,
+    weight: {
+      startDate: dayKey(n - 1),
+      endDate: dayKey(0),
+      dateWeightList: weightList,
+      totalAverage: {
+        from: Date.now() - n * 86400000, until: Date.now(),
+        weight: 70400, bmi: 22.4, bodyFat: 18.5, bodyWater: 58.9,
+        boneMass: 3400, muscleMass: 33000, physiqueRating: null,
+        visceralFat: 1.2, metabolicAge: 31
+      }
+    }
   };
 }
 
@@ -268,12 +299,16 @@ eq(Math.round((rreal[9].stages.deep + rreal[9].stages.light +
    rreal[9].sleep, 'las 4 fases suman exactamente el total');
 eq(rreal[9].restingHR, 51, 'FC reposo desde values.restingHeartRate');
 ok(rreal[9].sleep > 0 && rreal.every(r => r.sleep > 0), 'todas las noches con sueño');
-w.__fl = run('flattenSleep({calendarDate:"2026-10-05", values:{deepTime:100, sleepScore:80}})');
-eq(w.__fl.deepTime, 100, 'flattenSleep aplanta values');
-eq(w.__fl.calendarDate, '2026-10-05', 'flattenSleep conserva lo propio');
-eq(w.__fl.values.deepTime, 100, 'flattenSleep no borra el original');
-eq(run('flattenSleep({a:1}).a'), 1, 'sin anidados devuelve el mismo objeto');
-eq(run('flattenSleep([1,2]).length'), 2, 'los arrays no se tocan');
+w.__fl = run('flattenObj({calendarDate:"2026-10-05", values:{deepTime:100, sleepScore:80}})');
+eq(w.__fl.deepTime, 100, 'flattenObj aplanta values');
+eq(w.__fl.calendarDate, '2026-10-05', 'flattenObj conserva lo propio');
+eq(w.__fl.values.deepTime, 100, 'flattenObj no borra el original');
+eq(run('flattenObj({a:1}).a'), 1, 'sin anidados devuelve el mismo objeto');
+eq(run('flattenObj([1,2]).length'), 2, 'los arrays no se tocan');
+eq(run('flattenObj({a:"propia", n:{a:"anidada", b:"extra"}}).a'), 'propia',
+   'lo propio manda sobre lo anidado');
+eq(run('flattenObj({a:"propia", n:{a:"anidada", b:"extra"}}).b'), 'extra',
+   'lo anidado se a&#241;ade solo si no existe');
 
 console.log('\n== Garmin: garminDiag() resume la sincronización ==');
 w.__dg = run('(function(){' +
@@ -452,6 +487,88 @@ run('localStorage.setItem("riq_config", JSON.stringify({source:"intervals", athl
 eq(run('restoreSession()'), true, 'config Intervals válida → true');
 await wait(60);
 run('doLogout();');
+
+console.log('\n== Garmin: peso y composición corporal ==');
+eq(last.body.weight, 70, 'peso de hoy en kg (la API lo da en gramos)');
+eq(last.body.bodyFat, 18.5, 'grasa corporal en %');
+eq(last.body.muscle, 33, 'masa magra pasada a kg');
+eq(last.body.bone, 3.4, 'masa ósea pasada a kg');
+eq(last.body.water, 58.9, 'agua corporal en %');
+eq(last.body.bmi, 22.4, 'IMC');
+eq(last.body.metAge, 31, 'edad metabólica');
+eq(last.body.visceral, 1.2, 'grasa visceral en kg');
+eq(run('pickBody({weight:72500, bodyFat:21.9, muscleMass:32800, boneMass:3539, bodyWater:57.1}).weight'),
+   72.5, 'pickBody convierte gramos → kg');
+eq(run('pickBody({weight:72500}).bodyFat'), undefined, 'pickBody admite campos incompletos');
+eq(run('pickBody({bodyFat:0.219}).bodyFat'), 21.9, 'porcentaje en fracción → 0-100');
+eq(run('isBodyWrap({dateWeightList:[], totalAverage:{weight:70000}})'), true,
+   'el envoltorio con totalAverage se descarta');
+eq(run('isBodyWrap({calendarDate:"2026-10-05", weight:70000})'), false,
+   'un registro plano sí se acepta');
+ok(/^\d{4}-\d{2}-\d{2}$/.test(run('bodyDate({date:1749975276000})')),
+   'bodyDate acepta epoch en ms', run('bodyDate({date:1749975276000})'));
+eq(run('bodyDate({calendarDate:"2026-10-05", weight:70000})'), '2026-10-05',
+   'bodyDate usa calendarDate');
+
+const wBody = run('(function(){' +
+  'var d = assembleData(garminToRows(window.__payload), ' +
+  'garminActivities(window.__payload)); return d;})()');
+ok(wBody.today.weight === 70, 'assembleData expone el peso de hoy',
+   wBody.today.weight);
+ok(wBody.today.weightBaseline >= 70 && wBody.today.weightBaseline <= 73,
+   'baseline = media de la ventana', wBody.today.weightBaseline);
+const wKeys = Object.keys(wBody.dailyMap).sort();
+const oldest = wBody.dailyMap[wKeys[0]];
+eq(oldest.body.weight, 71.5, 'el día más antiguo conserva SU peso (no el totalAverage)');
+ok(!wBody.today.body || wBody.today.body.weight !== 70.4,
+   'totalAverage NO se cuela como dato de un día');
+eq(run('(function(){var g=window.__payload.weight;' +
+       'return isBodyWrap(flattenObj(g)) ? 1 : 0;})()'), 1,
+   'la respuesta completa se trata como envoltorio');
+
+console.log('\n== UI: tarjeta de Peso en la portada ==');
+run('(function(){var r=garminToRows(window.__payload);' +
+    'var d=assembleData(r, garminActivities(window.__payload));' +
+    'window.__data=d; S.logs=[]; initApp(d); showTab("dashboard");})()');
+eq($('metrics-grid').querySelectorAll('.metric').length, 5, '5 tarjetas cuando hay peso');
+const wCard = $('metrics-grid').querySelector('[data-metric="weight"]');
+ok(!!wCard, 'la tarjeta Peso es pulsable');
+ok(wCard && wCard.className.indexOf('span2') >= 0, 'la tarjeta Peso ocupa los dos anchos');
+ok($('metrics-grid').textContent.indexOf('Peso') >= 0, 'etiqueta Peso visible');
+
+// Se limpian los overlays anteriores (los tests de restoreSession dejan uno)
+w.document.querySelectorAll('.sheet-overlay').forEach(el => el.remove());
+run('showWeightDetail()');
+const wSheet = w.document.querySelector('.sheet-overlay');
+ok(!!wSheet, 'la hoja de Peso se abre');
+ok(wSheet && wSheet.textContent.indexOf('Composici') >= 0, 'título de la hoja',
+   wSheet && wSheet.textContent.slice(0, 60));
+ok(wSheet && wSheet.textContent.indexOf('Masa magra') >= 0, 'desglose de masa magra');
+ok(wSheet && wSheet.textContent.indexOf('Grasa corporal') >= 0, 'desglose de grasa');
+ok(!!w.document.querySelector('.spark'), 'gráfico de evolución del peso');
+ok(!!w.document.querySelector('.spark-legend'), 'mín/media/máx del peso');
+w.document.querySelectorAll('.sheet-overlay').forEach(el => el.remove());
+
+console.log('\n== UI: el peso aparece en el detalle del día del calendario ==');
+run('showDayDetail(todayKey())');
+ok($('day-detail').textContent.indexOf('Peso') >= 0, 'fila Peso en el día',
+   $('day-detail').textContent.slice(0, 160));
+ok($('day-detail').textContent.indexOf('Grasa corporal') >= 0, 'fila Grasa corporal en el día');
+ok($('day-detail').textContent.indexOf('Masa magra') >= 0, 'fila Masa magra en el día');
+
+console.log('\n== UI: Ajustes informa del peso sincronizado ==');
+run('S.source="garmin"; S.garmin={refreshToken:"t", clientId:"c",' +
+    ' displayName:"pardojavi"}; S.garmin.diag=' +
+    JSON.stringify(run('(function(){var r=garminToRows(window.__payload);' +
+      'var a=garminActivities(window.__payload);' +
+      'return garminDiag({start:"2026-08-01", end:"2026-09-30", diag:{' +
+      'weight:{s:200,k:"filas(60){calendarDate,weight,bmi,bodyFat}",n:60}}}, r, a);})()')) +
+    '; renderSettings();');
+eq(run('S.garmin.diag.bodyDays'), 60, '60 días con peso');
+ok($('diag-weight').innerHTML.indexOf('HTTP 200') >= 0, 'fila Peso con estado',
+   $('diag-weight').innerHTML);
+ok($('diag-counts').textContent.indexOf('peso 60') >= 0,
+   'los recuentos incluyen el peso', $('diag-counts').textContent);
 
 console.log('\n== Errores JS tardíos ==');
 ok(!$('js-err') || !$('js-err').classList.contains('show'), 'ningún error JS en toda la ejecución',

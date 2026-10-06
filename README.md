@@ -266,11 +266,31 @@ pide el código de 6 dígitos y lo manda con `POST sso.garmin.com/mobile/api/mfa
 | **Fases: profundo · ligero · REM · despierto** | ídem (`deepSleepSeconds`, `remSleepSeconds`…) | ❌ **Solo Garmin** |
 | Carga de entrenamiento por actividad | `/fitnessstats-service/activity/all?metric=activityTrainingLoad` | ✅ |
 | Actividades recientes | `/activitylist-service/activities/search/activities` | ✅ |
+| **Peso y composición corporal** | `/weight-service/weight/dateRange` | ❌ **Solo Garmin** |
 
-**Son 8 peticiones por sincronización** (perfil, HRV por rango, FC reposo por
-rango, carga, actividades y 3 trozos de sueño de 28 días — ese endpoint tiene
-límite de 28 días). El límite del plan Free de Workers son 50 subpeticiones por
-invocación, así que hay margen de sobra.
+**Son 9 peticiones por sincronización** (perfil, HRV por rango, FC reposo por
+rango, carga, actividades, composición corporal y 3 trozos de sueño de 28 días —
+ese endpoint tiene límite de 28 días). El límite del plan Free de Workers son 50
+subpeticiones por invocación, así que hay margen de sobra.
+
+**Peso, grasa y masa magra.** El endpoint de composición corporal devuelve
+`{startDate, endDate, dateWeightList[…], totalAverage}` con **peso y masas en
+gramos** y porcentajes en 0–100. En el cliente, `pickBody()`:
+
+- pasa gramos → kg (`weight`, `muscleMass`, `boneMass`, `visceralFat`) y
+  fracción → % si hace falta (`bodyFat`, `bodyWater`);
+- descarta `totalAverage` (la media del rango entero) con el filtro de
+  *registro plano* `isBodyWrap()`, para que no se cuela con la fecha de inicio;
+- se queda con el registro **más completo** de cada día, así que una pesada sin
+  grasa no tapa a la anterior que sí la traía;
+- como la báscula no pesa a diario, la portada muestra el **último registro** y
+  avisa de su fecha si no es de hoy.
+
+En la portada hay una tarjeta **Peso** (ancho completo) con el peso, la grasa y
+la variación frente a la media. Al tocarla se abre una hoja —igual que la del
+sueño— con el desglose completo (grasa, masa magra, agua, hueso, visceral, IMC,
+edad metabólica) y una **gráfica de evolución** con mínimo, media y máximo de los
+últimos 30 registros. El **Calendario** guarda lo mismo en el detalle de cada día.
 
 **CTL / ATL / TSB.** Garmin no expone CTL/ATL como tal, así que se calculan en
 `garminToRows()` con **el mismo modelo de Banister que usa Intervals.icu**:
@@ -385,7 +405,7 @@ Cinco pestañas en la barra inferior + Ajustes (desde el ⚙️ de arriba):
 
 | Pestaña | Contenido |
 |---|---|
-| 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas, conclusiones automáticas. El cuadro de **Sueño es clicable** y abre su detalle por fases |
+| 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas (y **Peso** a ancho completo cuando hay dato), conclusiones automáticas. Los cuadros de **Sueño y Peso son clicables** y abren su detalle |
 | 📅 **Calendario** | Mes completo coloreado por score, detalle por día (wellness + registro subjetivo) |
 | 🏁 **Informe** | Veredicto (🟢🟡🟠🔴), barras HRV/sueño/global, **estado de forma y rendimiento** (índice 0–100, CTL/ATL/TSB, ratio, narrativa), recomendaciones por rango |
 | 🤖 **IA** | Chat con Claude, 5 preguntas rápidas, system prompt con tus datos del día (incluidas las fases del sueño) |
@@ -427,6 +447,20 @@ Por eso la app:
 
 Además, todas las horas de sueño se muestran con **máximo 1 decimal y sin el `.0`
 sobrante** (`fmtSleep()`): `7.483333333333333` → `7.5`.
+
+#### Peso y composición corporal
+
+La tarjeta **⚖️ Peso** solo aparece cuando hay dato (Intervals.icu no lo trae y
+el modo demo no lo simula, así que en esas fuentes sigues viendo 4 métricas).
+
+Al tocarla se abre una hoja con el peso del día, el desglose —grasa corporal,
+masa magra, hidratación, masa ósea, grasa visceral, IMC, edad metabólica y
+metabolismo basal—, la comparación con tu media y con la grasa, y una **gráfica
+de evolución** con el mínimo, la media y el máximo de los últimos 30 registros.
+
+Cada día también guarda su composición corporal: el **Calendario** la muestra en
+el detalle del día, y **Ajustes → Diagnóstico Garmin** informa de cuántos días
+traen peso y qué devolvió el endpoint.
 
 ### Algoritmo de puntuación
 
@@ -479,7 +513,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 
 ## 9. Verificación
 
-Dos suites de jsdom sobre `recovery-app.html` (**224 aserciones, 0 fallos**,
+Dos suites de jsdom sobre `recovery-app.html` (**317 aserciones, 0 fallos**,
 0 errores en tiempo de ejecución). Están en `tests/` (`npm install` y
 `node test-smoke.mjs` / `node test-garmin.mjs`).
 
@@ -504,10 +538,18 @@ Dos suites de jsdom sobre `recovery-app.html` (**224 aserciones, 0 fallos**,
 - Límites de `calcScore` (0–100), umbrales de `scoreColor`/`scoreLabel`/
   `verdictFor` y normalización `sleepSecs`/`sleep`.
 
-### `test-garmin.mjs` — 100 aserciones
+### `test-garmin.mjs` — 193 aserciones
 
 - **Normalizador `garminToRows()`**: 60 filas, HRV, FC en reposo, sueño en horas
   con 1 decimal, y las 4 fases reales sumando exactamente el total.
+- **Peso y composición corporal** con la forma real de `weight/dateRange`:
+  gramos → kg, `bodyFat`/`bodyWater` en 0–100, `isBodyWrap()` descartando
+  `totalAverage`, `bodyDate()` con `calendarDate` o epoch en ms, media de la
+  ventana como baseline y el día más antiguo conservando su propio registro.
+- UI de la tarjeta **Peso**: 5 tarjetas con `data-metric="weight"` a ancho
+  completo, la hoja de detalle con desglose + gráfico de evolución, el peso en
+  el detalle de día del Calendario y la fila «Peso» del panel de diagnóstico en
+  Ajustes.
 - Redondeo de horas (`sec2h`), `garminFitness()` (EMA 42/7 con semilla en la
   media: carga constante 100 → CTL/ATL 100).
 - `assembleData()` con filas de Garmin: fases **no estimadas**, TSB = CTL − ATL,
