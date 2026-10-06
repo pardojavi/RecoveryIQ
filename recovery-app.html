@@ -436,6 +436,48 @@ button{border:0; background:none; cursor:pointer; padding:0;}
   transition:width .5s ease;
 }
 
+/* Cuadro con detalle (tappable) */
+.metric.tappable{
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  transition:transform .12s ease, border-color .12s ease;
+}
+.metric.tappable:active{transform:scale(.975); border-color:var(--accent);}
+.metric-chev{margin-left:auto; font-size:21px; line-height:1; color:var(--text3);}
+
+/* Detalle del sue&#241;o */
+.sl-date{font-size:12px; color:var(--text3); margin:-3px 0 8px;}
+.sl-total{display:flex; align-items:baseline; gap:7px; margin-bottom:14px;}
+.sl-total b{font-size:40px; font-weight:700; letter-spacing:-1.6px; line-height:1;}
+.sl-total small{font-size:13px; color:var(--text2);}
+.segbar{display:flex; height:14px; border-radius:99px; overflow:hidden; background:var(--bg3); margin-bottom:16px;}
+.segbar > i{display:block; height:100%;}
+.sl-rows{display:flex; flex-direction:column;}
+.sl-row{
+  display:flex; align-items:center; gap:9px;
+  padding:9px 0; font-size:13px;
+  border-bottom:1px solid var(--border);
+}
+.sl-row:last-child{border-bottom:0;}
+.sl-dot{width:9px; height:9px; border-radius:50%; flex:0 0 auto;}
+.sl-name{flex:1 1 auto; color:var(--text2);}
+.sl-h{font-weight:600; min-width:54px; text-align:right;}
+.sl-pct{color:var(--text3); font-size:11px; min-width:34px; text-align:right;}
+.sl-chips{display:flex; flex-wrap:wrap; gap:7px; margin-top:14px;}
+.sl-chip{
+  font-size:11px; font-weight:600; padding:5px 10px;
+  border-radius:99px; background:var(--bg3);
+  color:var(--text2); border:1px solid var(--border);
+}
+.sl-chip.up{color:var(--green); border-color:rgba(34,211,160,.35);}
+.sl-chip.down{color:var(--red); border-color:rgba(248,113,113,.35);}
+.sl-chip.flat{color:var(--text3);}
+.sl-note{
+  font-size:11.5px; color:var(--text3); line-height:1.55;
+  margin-top:14px; padding:10px 11px;
+  background:var(--bg3); border-radius:10px;
+}
+
 /* Insights */
 .insights-list{display:flex; flex-direction:column; gap:10px;}
 .insight-card{
@@ -567,6 +609,46 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 .rec-card.good{border-left-color:var(--green);}
 .rec-title{font-size:14px; font-weight:600; margin-bottom:5px;}
 .rec-body{font-size:13px; color:var(--text2); line-height:1.55;}
+
+/* Estado de forma y rendimiento (informe) */
+.f-head{display:flex; align-items:center; gap:14px; margin-top:16px;}
+.f-index{
+  display:flex; align-items:baseline; gap:7px;
+  font-size:44px; font-weight:700; letter-spacing:-2px; line-height:1;
+}
+.f-index small{font-size:20px;}
+.f-meta{min-width:0;}
+.f-level{
+  display:inline-block; font-size:12px; font-weight:700; letter-spacing:.3px;
+  padding:4px 11px; border-radius:99px;
+  background:var(--bg3); border:1px solid var(--border);
+}
+.f-level.lvl-go{color:var(--green); border-color:rgba(34,211,160,.35);}
+.f-level.lvl-mid{color:var(--blue); border-color:rgba(96,165,250,.35);}
+.f-level.lvl-low{color:var(--yellow); border-color:rgba(251,191,36,.35);}
+.f-sub{font-size:11.5px; color:var(--text3); margin-top:6px; line-height:1.4;}
+.f-grid{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+  margin-top:16px;
+}
+.fstat{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:12px; padding:11px 6px; text-align:center;
+}
+.fstat-v{font-size:17px; font-weight:700; letter-spacing:-.4px;}
+.fstat-k{
+  font-size:9.5px; color:var(--text3); text-transform:uppercase;
+  letter-spacing:.3px; margin-top:4px; line-height:1.3;
+}
+.f-bars{margin-top:18px;}
+.f-narr{
+  font-size:13px; color:var(--text2); line-height:1.65;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r); padding:14px 15px; margin-top:16px;
+}
+.f-narr b{color:var(--text); font-weight:600;}
+.f-act{font-size:12px; color:var(--text3); margin-top:11px; padding:0 2px;}
+.f-act b{color:var(--text2); font-weight:600;}
 .btn-ghost{
   display:block; width:100%;
   min-height:46px;
@@ -1005,6 +1087,9 @@ button{border:0; background:none; cursor:pointer; padding:0;}
       <div class="section-title">Estado de las m&#233;tricas</div>
       <div id="report-bars"></div>
 
+      <div class="section-title">Estado de forma y rendimiento</div>
+      <div id="report-form"></div>
+
       <div class="section-title">Recomendaciones</div>
       <div id="report-recs"></div>
 
@@ -1254,6 +1339,16 @@ function text2html(s){
 function round1(n){ return Math.round(n * 10) / 10; }
 function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
 
+/* Horas de sueño: máximo 1 decimal y sin el ".0" sobrante.
+   (sleepSecs/3600 daba cosas como 7.483333333333333) */
+function fmtSleep(h){
+  // 0 significa "sin datos" (getSleep ya devuelve null), no "0 horas de sueño"
+  if (h === null || h === undefined || !isFinite(h) || h === 0) return '&#8211;';
+  var r = Math.round(h * 10) / 10;
+  if (Math.abs(r - Math.round(r)) < 0.05) return String(Math.round(r));
+  return String(r);
+}
+
 function pad2(n){ return (n < 10 ? '0' : '') + n; }
 
 function ymd(d){ return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
@@ -1282,6 +1377,71 @@ function getSleep(w){
   if (w.sleepSecs && w.sleepSecs > 0) return w.sleepSecs / 3600;
   if (w.sleep && w.sleep > 0) return w.sleep;
   return null;
+}
+
+/* Lee un valor de fase de sueño venga en segundos o en horas */
+function pickStage(src, keys){
+  if (!src) return null;
+  for (var i = 0; i < keys.length; i++) {
+    var v = src[keys[i]];
+    if (typeof v === 'number' && isFinite(v) && v > 0) return v > 48 ? v / 3600 : v;
+  }
+  return null;
+}
+
+/* Intervals.icu no informa de las fases del sue&#241;o; si el origen s&#237; lo hace
+   (sleepDeepSecs, sleepRemSecs&#8230; o un objeto sleepStages) las leemos.
+   Si no, devolvemos null y luego se estiman, marc&#225;ndolo como tal. */
+function readSleepStages(w){
+  if (!w) return null;
+  var src = (w.sleepStages && typeof w.sleepStages === 'object') ? w.sleepStages : w;
+  var d = pickStage(src, ['sleepDeepSecs','deepSleepSecs','deepSecs','deep','sleep_deep_secs']);
+  var r = pickStage(src, ['sleepRemSecs','remSleepSecs','remSecs','rem','sleep_rem_secs']);
+  var l = pickStage(src, ['sleepLightSecs','lightSleepSecs','lightSecs','light','sleep_light_secs']);
+  var a = pickStage(src, ['sleepAwakeSecs','awakeSleepSecs','awakeSecs','awake','awakeTime','sleep_awake_secs']);
+  if (d === null && r === null && l === null && a === null) return null;
+  return { deep:d, rem:r, light:l, awake:a };
+}
+
+/* Reparto por fases + calidad. totalH en horas, avgH = media hist&#243;rica. */
+function buildSleepDetail(totalH, stages, avgH){
+  if (totalH === null || totalH === undefined || !isFinite(totalH)) return null;
+  var t   = round1(totalH);
+  var est = false;
+  var d = stages ? stages.deep  : null,
+      r = stages ? stages.rem   : null,
+      l = stages ? stages.light : null,
+      a = stages ? stages.awake : null;
+
+  if (d === null || r === null || l === null || a === null) {
+    // Reparto del adulto sano, algo peor cuanto menos se duerme
+    d = round1(t * (t >= 7 ? 0.20 : 0.16));
+    r = round1(t * (t >= 7.5 ? 0.22 : 0.19));
+    a = round1(t * (t >= 7 ? 0.08 : 0.12));
+    l = round1(t - d - r - a);
+    if (l < 0) l = 0;
+    est = true;
+  }
+
+  var det = { deep:d, rem:r, light:l, awake:a, total:t, estimated:est };
+  det.pctDeep  = t ? Math.round(d / t * 100) : 0;
+  det.pctRem   = t ? Math.round(r / t * 100) : 0;
+  det.pctLight = t ? Math.round(l / t * 100) : 0;
+  det.pctAwake = t ? Math.round(a / t * 100) : 0;
+  det.vsAvg    = (avgH && avgH > 0) ? round1(t - avgH) : null;
+
+  // Calidad 0-100: duraci&#243;n (60) + profundo (20) + REM (5) + despierto (15)
+  var q = 0;
+  if (t >= 7 && t <= 9)      q += 60;
+  else if (t >= 6)           q += 30;
+  else if (t >= 5)           q += 15;
+  else                       q += 5;
+  q += (t && d / t >= 0.20) ? 20 : ((t && d / t >= 0.15) ? 12 : 6);
+  q += (t && r / t >= 0.20) ? 5  : 2;
+  q += (t && a / t <= 0.10) ? 15 : ((t && a / t <= 0.20) ? 8 : 3);
+  det.quality = Math.round(clamp(q, 0, 100));
+
+  return det;
 }
 
 function safeGet(k, fallback){
@@ -1383,6 +1543,7 @@ function normalizeRows(list){
       hrv:        (w.hrv || w.hrvAvg || null),
       restingHR:  (w.restingHR || w.resting_hr || null),
       sleep:      getSleep(w),
+      stages:     readSleepStages(w),
       ctl:        w.ctl || 0,
       atl:        w.atl || 0
     });
@@ -1416,6 +1577,7 @@ function assembleData(rows, activities){
       hrv:       r.hrv,
       restingHR: r.restingHR,
       sleep:     r.sleep,
+      stages:    r.stages,
       ctl:       ctl,
       atl:       atl,
       tsb:       Math.round((ctl - atl) * 10) / 10,
@@ -1442,6 +1604,7 @@ function assembleData(rows, activities){
     restingHRChange:     avgHR ? round1(((t.restingHR || avgHR) - avgHR) / avgHR * 100) : 0,
     sleep:               t.sleep,
     sleepChange:         t.sleep !== null ? round1(t.sleep - avgSleep) : 0,
+    sleepDetail:         buildSleepDetail(t.sleep, t.stages, avgSleep),
     ctl:                 t.ctl,
     atl:                 t.atl,
     tsb:                 t.tsb,
@@ -1596,6 +1759,83 @@ function showToast(msg){
   toastTimer = setTimeout(function(){ el.classList.remove('show'); }, 2800);
 }
 
+/* ---------- Detalle del sue&#241;o (tapa en el cuadro de Sue&#241;o) ---------- */
+function showSleepDetail(){
+  var ov = document.createElement('div');
+  ov.className = 'sheet-overlay';
+
+  var title = '<div class="sheet-title">Detalle del sue&#241;o</div>';
+  var body  = '';
+
+  if (S.data && S.data.today && S.data.today.sleepDetail) {
+    var t = S.data.today, d = t.sleepDetail;
+    var fd = parseYmd(t.date);
+    var fecha = DOW_FULL[fd.getDay()] + ' ' + fd.getDate() + ' de ' +
+                MONTHS[fd.getMonth()].toLowerCase();
+
+    var stages = [
+      { label:'Sue&#241;o profundo', h:d.deep,  pct:d.pctDeep,  c:'#4f46e5' },
+      { label:'Sue&#241;o ligero',    h:d.light, pct:d.pctLight, c:'#60a5fa' },
+      { label:'REM',                 h:d.rem,   pct:d.pctRem,   c:'#a78bfa' },
+      { label:'Despierto',           h:d.awake, pct:d.pctAwake, c:'#fbbf24' }
+    ];
+
+    var seg = '', rows = '', i, s;
+    for (i = 0; i < stages.length; i++) {
+      s = stages[i];
+      if (s.pct > 0) seg += '<i style="width:' + s.pct + '%;background:' + s.c + '"></i>';
+      rows += '<div class="sl-row">' +
+                '<span class="sl-dot" style="background:' + s.c + '"></span>' +
+                '<span class="sl-name">' + s.label + '</span>' +
+                '<span class="sl-h">' + fmtSleep(s.h) + ' h</span>' +
+                '<span class="sl-pct">' + s.pct + '%</span>' +
+              '</div>';
+    }
+
+    var vsAvg = '';
+    if (d.vsAvg !== null && d.vsAvg !== undefined) {
+      var cls = d.vsAvg >= 0.3 ? 'up' : (d.vsAvg <= -0.3 ? 'down' : 'flat');
+      vsAvg = '<span class="sl-chip ' + cls + '">vs tu media ' +
+              (d.vsAvg > 0 ? '+' : '') + fmtSleep(d.vsAvg) + ' h</span>';
+    }
+
+    var rango = d.total >= 7 && d.total <= 9
+      ? '<span class="sl-chip up">&#10003; Dentro de 7&#8211;9 h</span>'
+      : (d.total < 7
+          ? '<span class="sl-chip down">Faltan ' + fmtSleep(7 - d.total) + ' h</span>'
+          : '<span class="sl-chip flat">+' + fmtSleep(d.total - 9) + ' h sobre 9 h</span>');
+
+    body =
+      '<div class="sl-date">' + fecha + '</div>' +
+      '<div class="sl-total"><b>' + fmtSleep(d.total) + '</b><small>h de sue&#241;o</small></div>' +
+      '<div class="segbar">' + seg + '</div>' +
+      '<div class="sl-rows">' + rows + '</div>' +
+      '<div class="sl-chips">' + vsAvg + rango +
+        '<span class="sl-chip">Calidad' + (d.estimated ? ' (est.)' : '') +
+          ' <b>' + d.quality + '</b>/100</span>' +
+      '</div>' +
+      (d.estimated
+        ? '<div class="sl-note">&#9888;&#65039; El reparto por fases es una <b>estimaci&#243;n</b>: ' +
+          'Intervals.icu solo informa del total. Si sincronizas un dispositivo que s&#237; lo ' +
+          'reporte, ver&#225;s aqu&#237; los valores reales.</div>'
+        : '<div class="sl-note">&#10004; Reparto por fases informado por tu dispositivo.</div>');
+  }
+
+  ov.innerHTML =
+    '<div class="sheet">' +
+      '<div class="sheet-handle"></div>' +
+      title + body +
+      '<button class="btn-primary sheet-close">Cerrar</button>' +
+    '</div>';
+
+  function close(){ if (ov.parentNode) ov.parentNode.removeChild(ov); }
+  ov.addEventListener('click', function(e){
+    if (e.target === ov) close();
+    if (e.target && e.target.className && String(e.target.className).indexOf('sheet-close') >= 0) close();
+  });
+  document.body.appendChild(ov);
+}
+
 function showErrorModal(msg){
   var ov = document.createElement('div');
   ov.className = 'sheet-overlay';
@@ -1715,7 +1955,7 @@ function renderDashboard(){
   /* Trend pills */
   var pills = '';
   if (t.hrv)            pills += trendPill('HRV', t.hrv + ' ms', t.hrvChange, true, '%', true);
-  if (t.sleep !== null) pills += trendPill('Sue&#241;o', t.sleep + ' h', t.sleepChange, true, ' h', false);
+  if (t.sleep !== null) pills += trendPill('Sue&#241;o', fmtSleep(t.sleep) + ' h', t.sleepChange, true, ' h', false);
   if (t.restingHR)      pills += trendPill('FC', t.restingHR + ' bpm', t.restingHRChange, false, '%', true);
 
   var tsb = t.tsb;
@@ -1759,8 +1999,9 @@ function renderDashboard(){
                t.hrv ? 'Baseline ' + t.hrvBaseline + ' ms' : 'Sin datos', mHrv, 'var(--accent2)') +
     metricCard('&#129658;', 'FC reposo', t.restingHR ? t.restingHR : '&#8211;', 'bpm',
                t.restingHR ? 'Baseline ' + t.restingHRBaseline + ' bpm' : 'Sin datos', mRhr, 'var(--pink)') +
-    metricCard('&#127769;', 'Sue&#241;o', t.sleep !== null ? t.sleep : '&#8211;', 'h',
-               t.sleep !== null ? '&#211;ptimo 7&#8211;9 h' : 'Sin datos', mSlp, 'var(--blue)') +
+    metricCard('&#127769;', 'Sue&#241;o', t.sleep !== null ? fmtSleep(t.sleep) : '&#8211;', 'h',
+               t.sleep !== null ? '&#211;ptimo 7&#8211;9 h' : 'Sin datos', mSlp, 'var(--blue)',
+               'data-metric="sleep"') +
     metricCard('&#9889;', 'TSB', (t.tsb > 0 ? '+' : '') + t.tsb, '',
                'CTL ' + t.ctl + ' &#183; ATL ' + t.atl, mTsb, cTsb)
   );
@@ -1783,10 +2024,12 @@ function renderDashboard(){
   }
 }
 
-function metricCard(ico, label, val, unit, sub, pct, color){
-  return '<div class="metric">' +
+function metricCard(ico, label, val, unit, sub, pct, color, dataAttr){
+  return '<div class="metric' + (dataAttr ? ' tappable' : '') + '"' +
+           (dataAttr ? ' ' + dataAttr : '') + '>' +
            '<div class="metric-top"><div class="metric-ico">' + ico + '</div>' +
-           '<div class="metric-label">' + label + '</div></div>' +
+           '<div class="metric-label">' + label + '</div>' +
+           (dataAttr ? '<div class="metric-chev">&#8250;</div>' : '') + '</div>' +
            '<div class="metric-val">' + val + (unit ? '<small>' + unit + '</small>' : '') + '</div>' +
            '<div class="metric-sub">' + sub + '</div>' +
            '<div class="bar"><i style="width:' + pct + '%;background:' + color + '"></i></div>' +
@@ -1808,10 +2051,10 @@ function buildInsights(){
 
   if (t.sleep !== null && t.sleep < 6.5) {
     out.push({ type:'warn', icon:'&#127769;', title:'Sue&#241;o insuficiente',
-      body:'Solo ' + t.sleep + ' h. Por debajo de las 7 h recomendadas para recuperar.' });
+      body:'Solo ' + fmtSleep(t.sleep) + ' h. Por debajo de las 7 h recomendadas para recuperar.' });
   } else if (t.sleep !== null && t.sleep >= 8) {
     out.push({ type:'good', icon:'&#127769;', title:'Buen descanso',
-      body:t.sleep + ' h de sue&#241;o. Has cubierto bien la ventana de recuperaci&#243;n nocturna.' });
+      body:fmtSleep(t.sleep) + ' h de sue&#241;o. Has cubierto bien la ventana de recuperaci&#243;n nocturna.' });
   }
 
   if (t.tsb < -15) {
@@ -1929,7 +2172,7 @@ function showDayDetail(key){
     html += row('Recuperaci&#243;n', scoreEmoji(d.score) + ' ' + d.score + ' &#183; ' + scoreLabel(d.score), scoreColorHex(d.score));
     html += row('HRV', (d.hrv || '&#8211;') + ' ms');
     html += row('FC reposo', (d.restingHR || '&#8211;') + ' bpm');
-    html += row('Sue&#241;o', (d.sleep !== null ? d.sleep + ' h' : '&#8211;'));
+    html += row('Sue&#241;o', (d.sleep !== null ? fmtSleep(d.sleep) + ' h' : '&#8211;'));
     html += row('CTL', d.ctl);
     html += row('ATL', d.atl);
     html += row('TSB', (d.tsb > 0 ? '+' : '') + d.tsb, d.tsb < -10 ? '#f87171' : (d.tsb > 5 ? '#22d3a0' : null));
@@ -1982,7 +2225,7 @@ function renderReport(){
         (t.hrv || 0) + ' ms &#183; base ' + t.hrvBaseline + ' ms',
         hrvPct >= 80 ? '#22d3a0' : (hrvPct >= 60 ? '#60a5fa' : '#f87171')) +
     bar('Sue&#241;o vs 9 h m&#225;ximo', slpPct + '%', slpPct,
-        (t.sleep !== null ? t.sleep + ' h' : '&#8211;') + ' de 9 h',
+        (t.sleep !== null ? fmtSleep(t.sleep) + ' h' : '&#8211;') + ' de 9 h',
         slpPct >= 80 ? '#22d3a0' : (slpPct >= 72 ? '#60a5fa' : '#fbbf24')) +
     bar('Puntuaci&#243;n global', score + '/100', score,
         scoreLabel(score) + ' &#183; umbral de descanso 50',
@@ -2014,7 +2257,7 @@ function renderReport(){
 
   if (t.sleep !== null && t.sleep < 7) {
     recs.push({ cls:'warn', title:'&#9888;&#65039; D&#233;ficit de sue&#241;o',
-      body:'Solo ' + t.sleep + ' h de sue&#241;o. Recupera esta noche: el d&#233;ficit de sue&#241;o degrada la fuerza y la precisi&#243;n t&#233;cnica.' });
+      body:'Solo ' + fmtSleep(t.sleep) + ' h de sue&#241;o. Recupera esta noche: el d&#233;ficit de sue&#241;o degrada la fuerza y la precisi&#243;n t&#233;cnica.' });
   }
   if (t.tsb < -15) {
     recs.push({ cls:'warn', title:'&#9889; Carga aguda elevada',
@@ -2029,6 +2272,127 @@ function renderReport(){
             '</div>';
   }
   if ($('report-recs')) $('report-recs').innerHTML = html;
+
+  renderFormReport();
+}
+
+/* ---------- 12b. FORMA Y RENDIMIENTO ---------- */
+/* Compone un 0-100 con 4 pilares:
+   fitness (CTL) 40 · frescura (TSB) 30 · HRV vs base 20 · media de sue&#241;o 10 */
+function formIndexNow(t){
+  var fit = 40 * clamp(t.ctl / 60, 0, 1);
+  var fre = 30 * clamp(1 - Math.abs(t.tsb - 5) / 30, 0, 1);
+  var hr  = (avgHRV > 0 && t.hrv) ? 20 * clamp(t.hrv / avgHRV, 0, 1) : 0;
+  var sl  = (avgSleep > 0) ? 10 * clamp((avgSleep - 5) / 3, 0, 1) : 0;
+  return Math.round(clamp(fit + fre + hr + sl, 0, 100));
+}
+
+function formLevel(idx){
+  if (idx >= 75) return { text:'En gran forma',   cls:'lvl-go' };
+  if (idx >= 60) return { text:'Buena forma',     cls:'lvl-mid' };
+  if (idx >= 45) return { text:'Forma media',     cls:'lvl-mid' };
+  if (idx >= 30) return { text:'Baj&#243;n de forma', cls:'lvl-low' };
+  return { text:'Sin rodaje', cls:'lvl-low' };
+}
+
+function formNarrative(t, idx, ratio){
+  var p = [];
+
+  // Nivel general
+  if (idx >= 75)      p.push('Llevas un <b>' + idx + '/100</b> de &#237;ndice de forma: es un buen momento para exprimirte.');
+  else if (idx >= 60) p.push('Tu &#237;ndice de forma est&#225; en <b>' + idx + '/100</b>, por encima de tu punto de partida habitual.');
+  else if (idx >= 45) p.push('Tu &#237;ndice de forma es de <b>' + idx + '/100</b>: vas pero a media m&#225;quina.');
+  else                p.push('Tu &#237;ndice de forma baja a <b>' + idx + '/100</b>: has perdido rodaje respecto a tu mejor punto.');
+
+  // Ratio forma / fatiga
+  if (ratio >= 1.15)      p.push('Con un CTL de ' + t.ctl + ' y un ATL de ' + t.atl + ' acumulas <b>m&#225;s forma que fatiga</b> (ratio ' + ratio.toFixed(2) + '), la situaci&#243;n ideal para rendir.');
+  else if (ratio <= 0.85) p.push('Con un CTL de ' + t.ctl + ' y un ATL de ' + t.atl + ' tienes <b>m&#225;s fatiga que forma</b> (ratio ' + ratio.toFixed(2) + '): conviene no cargar m&#225;s hoy.');
+  else                    p.push('Tu CTL (' + t.ctl + ') y tu ATL (' + t.atl + ') van <b>equilibrados</b> (ratio ' + ratio.toFixed(2) + '), ratio de mantenimiento.');
+
+  // Freshness
+  if (t.tsb <= -15)      p.push('El TSB de ' + t.tsb + ' indica <b>fatiga acumulada</b>: baja el pist&#243;n antes de que pese en el entreno.');
+  else if (t.tsb < -5)   p.push('El TSB de ' + t.tsb + ' es negativo: a&#250;n est&#225;s digiriendo carga, pero dentro de lo normal.');
+  else if (t.tsb >= 15)  p.push('El TSB de +' + t.tsb + ' te deja <b>muy fresco</b>: ventanilla de rendimiento, buen d&#237;a para un test.');
+  else                   p.push('El TSB de ' + (t.tsb > 0 ? '+' : '') + t.tsb + ' est&#225; en zona neutra, sin exceso de frescura ni de fatiga.');
+
+  // HRV
+  if (t.hrvChange >= 8)       p.push('Tu HRV va un ' + t.hrvChange + '% por encima de tu base: el sistema nervioso est&#225; respondiendo bien.');
+  else if (t.hrvChange <= -8) p.push('Tu HRV est&#225; un ' + Math.abs(t.hrvChange) + '% por debajo de tu base, se&#241;al de que a&#250;n no has recuperado.');
+
+  // Sue&#241;o medio
+  if (avgSleep > 0) {
+    if (avgSleep < 6.5)      p.push('Tu media de sue&#241;o de <b>' + fmtSleep(avgSleep) + ' h</b> est&#225; muy por debajo de las 7 h: es la palanca m&#225;s f&#225;cil para mejorar.');
+    else if (avgSleep < 7)   p.push('Tu media de sue&#241;o de <b>' + fmtSleep(avgSleep) + ' h</b> se queda corta; apuntar a 7 h ya te dar&#225; margen.');
+    else if (avgSleep <= 9)  p.push('Duermes de media <b>' + fmtSleep(avgSleep) + ' h</b>, dentro de la ventana 7&#8211;9 h.');
+    else                     p.push('Duermes de media <b>' + fmtSleep(avgSleep) + ' h</b>: por encima de 9 h, comprueba que no sea por exceso de horas en la cama.');
+  }
+
+  return p.join(' ');
+}
+
+function renderFormReport(){
+  var box = $('report-form');
+  if (!box) return;
+  if (!S.data) { box.innerHTML = ''; return; }
+
+  var t = S.data.today;
+  var idx = formIndexNow(t);
+  var lvl = formLevel(idx);
+  var ratio = t.atl > 0 ? Math.round(t.ctl / t.atl * 100) / 100 : 0;
+
+  function fstat(v, k){
+    return '<div class="fstat"><div class="fstat-v">' + v + '</div><div class="fstat-k">' + k + '</div></div>';
+  }
+
+  var ctlPct = Math.round(clamp(t.ctl / 60 * 100, 0, 100));
+  var atlPct = Math.round(clamp(t.atl / 60 * 100, 0, 100));
+  var tsbPct = Math.round(clamp((t.tsb + 30) / 60 * 100, 0, 100));
+
+  var ctlColor = t.ctl >= 45 ? '#22d3a0' : (t.ctl >= 25 ? '#60a5fa' : '#fbbf24');
+  var atlColor = t.atl >= 55 ? '#f87171' : (t.atl >= 35 ? '#fbbf24' : '#60a5fa');
+  var tsbColor = t.tsb >= 0 ? '#22d3a0' : (t.tsb > -10 ? '#60a5fa' : '#f87171');
+
+  var last = S.data.lastActivity;
+  var lastLine = '';
+  if (last) {
+    var ld = last.start_date || last.start_date_local || '';
+    lastLine = '<div class="f-act">&#127939; &#218;ltima actividad: <b>' + esc(last.name || 'Sin nombre') + '</b>' +
+               (ld ? ' &#183; ' + esc(String(ld).slice(0, 10)) : '') + '</div>';
+  }
+
+  box.innerHTML =
+    '<div class="f-head">' +
+      '<div class="f-index" style="color:' + scoreColorHex(idx) + '">' + idx +
+        '<small>' + scoreEmoji(idx) + '</small></div>' +
+      '<div class="f-meta">' +
+        '<div class="f-level ' + lvl.cls + '">' + lvl.text + '</div>' +
+        '<div class="f-sub">&#205;ndice de forma &#183; forma ' + t.ctl + ' &#183; fatiga ' +
+          t.atl + ' &#183; TSB ' + (t.tsb > 0 ? '+' : '') + t.tsb + '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="f-grid">' +
+      fstat(t.ctl, 'CTL &#183; forma') +
+      fstat(t.atl, 'ATL &#183; fatiga') +
+      fstat((t.tsb > 0 ? '+' : '') + t.tsb, 'TSB &#183; frescura') +
+      fstat(ratio.toFixed(2), 'Ratio CTL/ATL') +
+      fstat((t.hrvChange > 0 ? '+' : '') + t.hrvChange + '%', 'HRV vs base') +
+      fstat(fmtSleep(avgSleep) + ' h', 'Sue&#241;o medio') +
+    '</div>' +
+
+    '<div class="f-bars">' +
+      bar('Acondicionamiento (CTL)', String(t.ctl), ctlPct,
+          'Objetivo de referencia 60 &#183; ' +
+          (t.ctl >= 45 ? 'base s&#243;lida' : (t.ctl >= 25 ? 'base en construcci&#243;n' : 'poco rodaje')), ctlColor) +
+      bar('Fatiga aguda (ATL)', String(t.atl), atlPct,
+          t.atl >= 55 ? 'Carga alta: vigila las sensaciones'
+                      : (t.atl >= 35 ? 'Carga moderada' : 'Carga ligera'), atlColor) +
+      bar('Frescura (TSB)', (t.tsb > 0 ? '+' : '') + t.tsb, tsbPct,
+          t.tsb <= -15 ? 'Fatiga acumulada' : (t.tsb >= 15 ? 'Zona de rendimiento' : 'Zona neutra'), tsbColor) +
+    '</div>' +
+
+    '<div class="f-narr">' + formNarrative(t, idx, ratio) + '</div>' +
+    lastLine;
 }
 
 function bar(k, right, pct, sub, color){
@@ -2174,7 +2538,13 @@ function buildSystemPrompt(){
     ? 'Índice de recuperación: ' + t.recoveryScore + '/100 (' + scoreLabel(t.recoveryScore) + '). ' +
       'HRV: ' + (t.hrv || 'n/d') + ' ms (base ' + t.hrvBaseline + '). ' +
       'FC reposo: ' + (t.restingHR || 'n/d') + ' bpm (base ' + t.restingHRBaseline + '). ' +
-      'Sueño: ' + (t.sleep !== null ? t.sleep + ' h' : 'n/d') + '. ' +
+      'Sueño: ' + (t.sleep !== null ? fmtSleep(t.sleep) + ' h' : 'n/d') +
+        (t.sleepDetail
+          ? ' (profundo ' + fmtSleep(t.sleepDetail.deep) + ' h, REM ' + fmtSleep(t.sleepDetail.rem) +
+            ' h, ligero ' + fmtSleep(t.sleepDetail.light) + ' h, despierto ' +
+            fmtSleep(t.sleepDetail.awake) + ' h' +
+            (t.sleepDetail.estimated ? '; reparto por fases estimado' : '') + ')'
+          : '') + '. ' +
       'CTL: ' + t.ctl + ', ATL: ' + t.atl + ', TSB: ' + t.tsb + '.'
     : 'Sin datos disponibles.';
 
@@ -2456,6 +2826,18 @@ wire('btn-settings', 'click', function(){ showTab('settings'); });
 
 /* Dashboard */
 wire('link-analysis', 'click', function(){ showTab('report'); });
+
+// Tocar el cuadro de Sue&#241;o abre su detalle (delegado: el innerHTML cambia)
+wire('metrics-grid', 'click', function(e){
+  var el = e && e.target;
+  while (el && el !== this) {
+    if (el.getAttribute && el.getAttribute('data-metric') === 'sleep') {
+      showSleepDetail();
+      return;
+    }
+    el = el.parentNode;
+  }
+});
 
 /* Calendario */
 wire('cal-prev', 'click', function(){

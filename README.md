@@ -241,12 +241,31 @@ Cinco pestañas en la barra inferior + Ajustes (desde el ⚙️ de arriba):
 
 | Pestaña | Contenido |
 |---|---|
-| 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas, conclusiones automáticas |
+| 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas, conclusiones automáticas. El cuadro de **Sueño es clicable** y abre su detalle por fases |
 | 📅 **Calendario** | Mes completo coloreado por score, detalle por día (wellness + registro subjetivo) |
-| 🏁 **Informe** | Veredicto (🟢🟡🟠🔴), barras HRV/sueño/global, recomendaciones por rango |
-| 🤖 **IA** | Chat con Claude, 5 preguntas rápidas, system prompt con tus datos del día |
+| 🏁 **Informe** | Veredicto (🟢🟡🟠🔴), barras HRV/sueño/global, **estado de forma y rendimiento** (índice 0–100, CTL/ATL/TSB, ratio, narrativa), recomendaciones por rango |
+| 🤖 **IA** | Chat con Claude, 5 preguntas rápidas, system prompt con tus datos del día (incluidas las fases del sueño) |
 | 📝 **Registrar** | Cansancio, ánimo, estrés, calidad de sueño, molestias, salud, notas |
 | ⚙️ **Ajustes** | Athlete ID, sincronizar, nº de registros, versión, cerrar sesión |
+
+#### Detalle del sueño
+
+Tocar el cuadro **🌙 Sueño** abre una hoja con el total, el reparto por fases
+(profundo, ligero, REM, despierto), su porcentaje, la comparación con tu media,
+el rango 7–9 h y la calidad 0–100.
+
+Intervals.icu **no publica las fases del sueño**, solo el total (`sleepSecs`/`sleep`).
+Por eso la app:
+
+1. Si el origen sí las trae (`sleepDeepSecs`, `sleepRemSecs`… o un objeto
+   `sleepStages`, en segundos o en horas) → las muestra **tal cual**, marcadas
+   como informadas por el dispositivo.
+2. Si no → las **estima** con el reparto típico del adulto (algo peor cuanto menos
+   se duerme) y lo dice explícitamente en la hoja, para que nadie lo confunda
+   con un dato real.
+
+Además, todas las horas de sueño se muestran con **máximo 1 decimal y sin el `.0`
+sobrante** (`fmtSleep()`): `7.483333333333333` → `7.5`.
 
 ### Algoritmo de puntuación
 
