@@ -1864,8 +1864,35 @@ function fetchGarminData(){
     var data = assembleData(rows, garminActivities(r.data));
     if (!data) throw new Error('NO_DATA_GARMIN');
     data.source = 'garmin';
+    var warn = garminWarn(r.diag, rows);
+    if (warn) setTimeout(function(){ showToast(warn); }, 900);
     return data;
   });
+}
+
+/* Aviso de diagn&#243;stico: si tras el sync falta HRV o sue&#241;o, decimos QU&#201;
+   devolvi&#243; cada endpoint (estado HTTP + claves de la respuesta) para poder
+   corregirlo sin adivinar. */
+function garminWarn(diag, rows){
+  if (!diag) return '';
+  var hasH = false, hasS = false, i;
+  for (i = 0; i < rows.length; i++) {
+    if (rows[i].hrv) hasH = true;
+    if (rows[i].sleep !== null) hasS = true;
+  }
+  if (hasH && hasS) return '';
+  var names = [], det = [];
+  if (!hasH && diag.hrv) {
+    names.push('HRV');
+    det.push(esc('HRV ' + diag.hrv.s) + (diag.hrv.k ? ' &middot; ' + esc(diag.hrv.k) : ''));
+  }
+  if (!hasS && diag.sleep && diag.sleep.length) {
+    names.push('sue&#241;o');
+    det.push('sue&#241;o ' + esc(diag.sleep[0].s) +
+             (diag.sleep[0].k ? ' &middot; ' + esc(diag.sleep[0].k) : ''));
+  }
+  if (!det.length) return '';
+  return '&#9888;&#65039; Sin ' + names.join(' ni ') + ' de Garmin<br>' + det.join(' &middot; ');
 }
 
 /* --- utilidades de normalizaci&#243;n ------------------------------------ */
@@ -1881,6 +1908,29 @@ function asList(x, keys){
     if (Object.prototype.toString.call(x[keys[i]]) === '[object Array]') return x[keys[i]];
   }
   return [];
+}
+
+/* Recorre la respuesta de Garmin recogiendo TODOS los objetos anidados.
+   As&#237; da igual c&#243;mo empaquete cada endpoint (array plano, {data:[&#8230;]},
+   {hrvData:[{hrvSummary:{&#8230;}}]}, trozos de sue&#241;o sueltos, un solo d&#237;a&#8230;):
+   el normalizador encuentra todos los registros y luego filtra por los campos
+   que s&#237; interesan. M&#225;s tolerante que cualquier lista de claves fija. */
+function collectRecords(x, out, depth){
+  if (!x || depth > 6 || out.length > 6000) return;
+  if (Object.prototype.toString.call(x) === '[object Array]') {
+    for (var i = 0; i < x.length; i++) collectRecords(x[i], out, depth + 1);
+    return;
+  }
+  if (typeof x !== 'object') return;
+  out.push(x);
+  for (var k in x) {
+    if (Object.prototype.hasOwnProperty.call(x, k)) collectRecords(x[k], out, depth + 1);
+  }
+}
+function recordsOf(x){
+  var acc = [];
+  collectRecords(x, acc, 0);
+  return acc;
 }
 
 function garminDate(o){
@@ -1908,19 +1958,21 @@ function garminDate(o){
 
 function sec2h(secs){ return Math.round(secs / 360) / 10; } // segundos → horas (1 decimal)
 
-/* Carga diaria = suma del activityTrainingLoad de cada actividad */
+/* Carga diaria = suma del activityTrainingLoad de cada actividad.
+   Barrido profundo: da igual qu&#233; c&#225;psula use el endpoint de cargas. */
 function garminLoadMap(g){
-  var src = asList(g && g.load, ['activities','data','items','metrics']);
-  if (!src.length) src = asList(g && g.activities, ['activities','data','items']);
+  var src = recordsOf(g && g.load);
+  if (!src.length) src = recordsOf(g && g.activities);
   var map = {}, has = false;
   for (var i = 0; i < src.length; i++) {
     var a = src[i];
     if (!a || typeof a !== 'object') continue;
+    var v = numv(a.activityTrainingLoad || a.trainingLoad || a.load || a.tss);
+    if (!v) continue;
     var id = garminDate(a);
     if (!id) continue;
-    var v = numv(a.activityTrainingLoad || a.trainingLoad || a.load || a.tss);
     map[id] = (map[id] || 0) + v;
-    if (v > 0) has = true;
+    has = true;
   }
   return { map: map, has: has };
 }
@@ -1960,40 +2012,51 @@ function garminToRows(g){
     return rows[id];
   }
 
-  /* HRV (el endpoint /hrv-service/hrv/daily/a/b trae adem&#225;s el baseline) */
-  var hrv = asList(g.hrv, ['hrvData','data','items']);
-  for (i = 0; i < hrv.length; i++) {
-    var h = hrv[i] && (hrv[i].hrvSummary || hrv[i]);
+  /* HRV (el endpoint /hrv-service/hrv/daily/a/b trae adem&#225;s el baseline).
+     Barrido de TODOS los objetos anidados: acepta array plano, {hrvData:[&#8230;]},
+     {hrvSummary:{&#8230;}} suelto, o cualquier otra c&#225;psula que use Garmin. */
+  var hrec = recordsOf(g.hrv);
+  for (i = 0; i < hrec.length; i++) {
+    var hw = hrec[i] || {};
+    var h  = (hw.hrvSummary && typeof hw.hrvSummary === 'object') ? hw.hrvSummary : hw;
     if (!h || typeof h !== 'object') continue;
-    var id1 = garminDate(h);
-    var v1  = numv(h.lastNightAvg || h.weeklyAvg || h.hrv || h.value);
-    if (id1 && v1) { var r1 = row(id1); if (r1) r1.hrv = Math.round(v1); }
+    var id1 = garminDate(h) || garminDate(hw);
+    var v1  = numv(h.lastNightAvg || h.weeklyAvg || h.hrv || h.value || hw.hrv);
+    if (id1 && v1) {
+      var r1 = row(id1);
+      if (r1 && !r1.hrv) r1.hrv = Math.round(v1);
+    }
   }
 
-  /* FC en reposo (metricsMap.WELLNESS_RESTING_HEART_RATE) */
-  var mm = (g.rhr && g.rhr.allMetrics && g.rhr.allMetrics.metricsMap) || {};
-  var rl = mm.WELLNESS_RESTING_HEART_RATE || mm.RESTING_HEART_RATE || null;
-  if (Object.prototype.toString.call(rl) !== '[object Array]') rl = asList(g.rhr, ['data','items']);
-  for (i = 0; i < rl.length; i++) {
-    var it = rl[i] || {};
+  /* FC en reposo: metricsMap.WELLNESS_RESTING_HEART_RATE o cualquier shape.
+     Aqu&#237; S&#243;LO hay m&#233;tricas de FC reposo, as&#237; que `value` con fecha vale. */
+  var rrec = recordsOf(g.rhr);
+  for (i = 0; i < rrec.length; i++) {
+    var it = rrec[i] || {};
     var id2 = garminDate(it);
-    var v2  = numv(it.value !== undefined ? it.value
-                : (it.metricValue !== undefined ? it.metricValue : it.restingHeartRate));
-    if (id2 && v2) { var r2 = row(id2); if (r2) r2.restingHR = Math.round(v2); }
+    if (!id2) continue;
+    var v2 = numv(it.restingHeartRate) || numv(it.value) || numv(it.metricValue);
+    if (v2) {
+      var r2 = row(id2);
+      if (r2 && !r2.restingHR) r2.restingHR = Math.round(v2);
+    }
   }
 
-  /* Sue&#241;o + fases REALES (Garmin s&#237; las informa: Intervals.icu, no) */
-  var sl = asList(g.sleep, ['individualStats','dailySleepData','data','items']);
-  for (i = 0; i < sl.length; i++) {
-    var s = sl[i] && (sl[i].dailySleepDTO || sl[i]);
-    var id3 = garminDate(s);
+  /* Sue&#241;o + fases REALES (Garmin s&#237; las informa: Intervals.icu, no).
+     El worker manda los JSON de cada trozo tal cual: los abrimos todos. */
+  var srec = recordsOf(g.sleep);
+  for (i = 0; i < srec.length; i++) {
+    var rec = srec[i] || {};
+    var s = (rec.dailySleepDTO && typeof rec.dailySleepDTO === 'object') ? rec.dailySleepDTO : rec;
+    if (!s || typeof s !== 'object') continue;
+    var id3 = garminDate(s) || garminDate(rec);
     if (!id3) continue;
     var deep  = numv(s.deepSleepSeconds), rem   = numv(s.remSleepSeconds),
         light = numv(s.lightSleepSeconds), awake = numv(s.awakeSleepSeconds);
     var total = numv(s.sleepTimeSeconds) || numv(s.totalSleepSeconds) || (deep + light + rem + awake);
     if (total <= 0) continue;
     var r3 = row(id3);
-    if (!r3) continue;
+    if (!r3 || r3.sleep !== null) continue;   // primer registro del d&#237;a gana
     r3.sleep = sec2h(total);
     if (deep + light + rem > 0) {
       // El ligero se ajusta al residual para que las cuatro fases sumen exacto
@@ -2004,6 +2067,9 @@ function garminToRows(g){
       if (ll < 0) ll = 0;
       r3.stages = { deep:dd, light:ll, rem:rr, awake:aa };
     }
+    /* Respaldo de HRV: avgSleepHRV es la HRV que Garmin calcula de madrugada */
+    var hv = numv(s.avgSleepHRV);
+    if (hv && !r3.hrv) r3.hrv = Math.round(hv);
   }
 
   /* Carga → CTL/ATL */
@@ -2028,13 +2094,16 @@ function garminToRows(g){
 
 /* Actividades de Garmin al formato que consume assembleData */
 function garminActivities(g){
-  var src = asList(g && g.activities, ['activities','data','items']);
-  var out = [];
-  for (var i = 0; i < src.length; i++) {
+  var src = recordsOf(g && g.activities), out = [], i;
+  for (i = 0; i < src.length; i++) {
     var a = src[i];
     if (!a || typeof a !== 'object') continue;
+    // S&#243;lo registros que claramente son una actividad (evita DTOs anidados)
+    if (!a.activityName && !a.name && !(a.activityType && a.activityType.typeKey) &&
+        a.activityId === undefined && a.summaryId === undefined) continue;
     var when = a.startTimeLocal || a.startTimeGMT || a.startLocal || a.startGMT ||
-               a.calendarDate || '';
+               a.calendarDate || a.startDateLocal || '';
+    if (!when) continue;
     out.push({
       name:        a.activityName || a.name ||
                    (a.activityType && a.activityType.typeKey) || 'Actividad',
@@ -2043,7 +2112,7 @@ function garminActivities(g){
       distance:    a.distance || 0,
       duration:    a.duration || 0,
       moving_time: a.movingTime || a.duration || 0,
-      average_heartrate: a.averageHR || null
+      average_heartrate: a.averageHR || a.averageHr || null
     });
   }
   return out;

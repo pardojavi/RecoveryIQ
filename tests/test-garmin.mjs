@@ -171,6 +171,38 @@ eq(run('garminToRows(window.__payload4).length'), 0, 'payload basura → 0 filas
 eq(run('(function(){try{garminToRows({hrv:[{hrvSummary:null}],sleep:[null]});return "no-throw";}catch(e){return "THROW: "+e.message;}})()'),
    'no-throw', 'valores nulos tolerados');
 
+console.log('\n== Garmin: tolerancia a la cápsula de cada endpoint ==');
+// HRV envuelto en {hrvData:[{hrvSummary:{…}}]}
+w.__sh1 = { hrv: { hrvData: [{ hrvSummary: { calendarDate: dayKey(0), lastNightAvg: 61 } }] } };
+eq(run('garminToRows(window.__sh1)[0].hrv'), 61, 'HRV en {hrvData:[…]}');
+// HRV como único objeto suelto (un solo día)
+w.__sh2 = { hrv: { calendarDate: dayKey(0), hrvSummary: { calendarDate: dayKey(0), lastNightAvg: 59 } } };
+eq(run('garminToRows(window.__sh2)[0].hrv'), 59, 'HRV como objeto suelto');
+// Sueño en los JSON crudos de cada trozo: [{individualStats:[…]}] (forma del worker)
+w.__sh3 = { sleep: [{ individualStats: [{ calendarDate: dayKey(0), sleepTimeSeconds: 28800,
+  deepSleepSeconds: 5400, lightSleepSeconds: 14400, remSleepSeconds: 7200, awakeSleepSeconds: 1800 }] }] };
+eq(run('garminToRows(window.__sh3)[0].sleep'), 8, 'sueño desde JSON crudo {individualStats:[…]}');
+eq(run('garminToRows(window.__sh3)[0].stages.deep'), 1.5, 'fases desde JSON crudo');
+// Sueño como único objeto (un solo día) y HRV de respaldo avgSleepHRV
+w.__sh4 = { hrv: null, sleep: { individualStats: [{ calendarDate: dayKey(0), sleepTimeSeconds: 27000,
+  avgSleepHRV: 63, deepSleepSeconds: 5400, lightSleepSeconds: 12600,
+  remSleepSeconds: 7200, awakeSleepSeconds: 1800 }] } };
+eq(run('garminToRows(window.__sh4)[0].sleep'), 7.5, 'sueño como objeto único');
+eq(run('garminToRows(window.__sh4)[0].hrv'), 63, 'HRV de respaldo = avgSleepHRV');
+// FC en reposo como array plano
+w.__sh5 = { rhr: [{ calendarDate: dayKey(0), value: 49 }] };
+eq(run('garminToRows(window.__sh5)[0].restingHR'), 49, 'FC reposo en array plano');
+
+console.log('\n== Garmin: garminWarn() diagnostica qué endpoint falló ==');
+eq(run('garminWarn(null, [])'), '', 'sin diag → sin aviso');
+eq(run('garminWarn({hrv:{s:200,k:"array(60)"},sleep:[{s:200,k:"objeto-vacío"}]}, [{hrv:60,sleep:7.5}])'),
+   '', 'sin huecos → sin aviso');
+const wh = run('garminWarn({hrv:{s:200,k:"objeto-vacío"},sleep:[{s:404,s2:0,k:"sin-cuerpo"}]}, [{hrv:null,sleep:null}])');
+ok(wh.indexOf('HRV') >= 0 && wh.indexOf('sue') >= 0, 'avisa de HRV y sueño', wh);
+ok(wh.indexOf('200') >= 0 && wh.indexOf('404') >= 0, 'incluye los estados HTTP', wh);
+ok(wh.indexOf('Sin HRV ni sue') >= 0, 'cabezal del aviso', wh.slice(0, 60));
+ok(wh.indexOf('&middot;') >= 0, 'separador HTML correcto (no escapado)', wh);
+
 console.log('\n== UI: selector de fuente ==');
 run("pickSource('garmin')");
 eq($('form-garmin').style.display, '', 'form Garmin visible');

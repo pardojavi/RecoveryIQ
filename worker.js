@@ -631,21 +631,34 @@ async function garminSync(body) {
     try { return await r.json(); } catch (e) { return fb; }
   };
 
-  const hrv = await jsonOf(results[0], []);
-  const rhr = await jsonOf(results[1], {});
-  const load = await jsonOf(results[2], []);
-  const activities = await jsonOf(results[3], []);
-
+  // Se devuelven los JSON SIN tocar. Toda la interpretación de "cápsulas"
+  // (array plano, {data:[…]}, {hrvData:[{hrvSummary:{…}}]}, trozos de sueño…)
+  // vive en la app, que es donde está cubierta por los tests de normalización.
+  const hrv = await jsonOf(results[0], null);
+  const rhr = await jsonOf(results[1], null);
+  const load = await jsonOf(results[2], null);
+  const activities = await jsonOf(results[3], null);
   const sleep = [];
-  const seen = {};
-  for (let i = 0; i < sleepChunks.length; i++) {
-    const d = await jsonOf(results[4 + i], {});
-    const list = (d && (d.individualStats || d.dailySleepData)) || [];
-    for (const row of list) {
-      const k = row && row.calendarDate;
-      if (k && !seen[k]) { seen[k] = true; sleep.push(row); }
-    }
-  }
+  for (let i = 0; i < sleepChunks.length; i++) sleep.push(await jsonOf(results[4 + i], null));
+
+  // Diagnóstico: qué devolvió cada endpoint. Si falta HRV o sueño, la app lo
+  // muestra en un toast para poder corregirlo sin adivinar.
+  const kindOf = (x) => x === null ? 'sin-cuerpo'
+    : Array.isArray(x) ? 'array(' + x.length + ')'
+    : typeof x === 'object' ? (Object.keys(x).slice(0, 6).join(',') || 'objeto-vacío')
+    : typeof x;
+  const statusOf = (i) => (results[i] && results[i].status) || 0;
+  const diag = {
+    hrv:  { s: statusOf(0), k: kindOf(hrv) },
+    rhr:  { s: statusOf(1), k: kindOf(rhr) },
+    load: { s: statusOf(2), k: kindOf(load) },
+    acts: { s: statusOf(3), k: kindOf(activities) },
+    sleep: sleepChunks.map((c, i) => ({
+      c: c[0].slice(5) + '/' + c[1].slice(5),
+      s: statusOf(4 + i),
+      k: kindOf(sleep[i]),
+    })),
+  };
 
   return json({
     ok: true,
@@ -654,6 +667,7 @@ async function garminSync(body) {
     displayName,
     start,
     end,
+    diag,
     data: { hrv, rhr, load, sleep, activities },
   });
 }
