@@ -245,7 +245,7 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 }
 .btn-demo:active{background:rgba(167,139,250,.1); transform:scale(.97);}
 
-/* Selector de fuente de datos (Intervals.icu / Garmin Connect) */
+/* Selector de fuente de datos (Intervals.icu / Garmin Connect / TrainingPeaks) */
 .src-switch{
   display:flex;
   gap:8px;
@@ -253,14 +253,35 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 }
 .src-opt{
   flex:1;
+  min-width:0;
   min-height:46px;
+  padding:0 4px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
   border:1px solid var(--border);
   background:rgba(255,255,255,.03);
   color:var(--text2);
-  font-size:14px;
+  font-size:12.5px;
   font-weight:600;
   border-radius:14px;
   transition:transform .15s ease, background .15s ease, border-color .15s ease;
+}
+
+/* Enlace textual (alternativa por cookie en TrainingPeaks) */
+.link-alt{
+  display:block;
+  width:100%;
+  margin-top:14px;
+  padding:6px 0;
+  background:none;
+  border:none;
+  color:var(--accent2);
+  font-size:13px;
+  font-weight:600;
+  text-align:center;
+  text-decoration:underline;
+  -webkit-tap-highlight-color:transparent;
 }
 .src-opt.active{
   background:rgba(167,139,250,.14);
@@ -1035,8 +1056,9 @@ button{border:0; background:none; cursor:pointer; padding:0;}
         <div class="src-switch" id="src-switch">
           <button type="button" class="src-opt active" data-src="intervals">Intervals.icu</button>
           <button type="button" class="src-opt" data-src="garmin">Garmin Connect</button>
+          <button type="button" class="src-opt" data-src="trainingpeaks">TrainingPeaks</button>
         </div>
-        <div class="hint">Dos v&#237;as de obtenci&#243;n de datos. Puedes cambiarlas cuando quieras.</div>
+        <div class="hint">Tres v&#237;as de obtenci&#243;n de datos. Puedes cambiarlas cuando quieras.</div>
       </div>
 
       <div id="form-intervals">
@@ -1084,13 +1106,49 @@ button{border:0; background:none; cursor:pointer; padding:0;}
           Tu contrase&#241;a no se guarda; solo se conserva un token en este dispositivo.
         </div>
       </div>
+
+      <div id="form-tp" style="display:none">
+        <div class="field">
+          <label class="field-label" for="inp-tp-email">Email de TrainingPeaks</label>
+          <input class="input" id="inp-tp-email" type="email" autocapitalize="none"
+                 autocorrect="off" spellcheck="false" placeholder="tu@email.com">
+          <div class="hint">La misma cuenta que usas en app.trainingpeaks.com</div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="inp-tp-pass">Contrase&#241;a</label>
+          <input class="input" id="inp-tp-pass" type="password" autocapitalize="none"
+                 autocorrect="off" spellcheck="false" placeholder="Tu contrase&#241;a de TrainingPeaks">
+        </div>
+
+        <button class="btn-primary" id="btn-tp">Conectar con TrainingPeaks</button>
+
+        <div class="hint" style="text-align:center; margin-top:12px; line-height:1.55;">
+          V&#237;a no oficial: reproduce el acceso de la app web oficial de TrainingPeaks.
+          Tu contrase&#241;a no se guarda; solo se conserva una sesi&#243;n en este dispositivo.
+        </div>
+
+        <button type="button" class="link-alt" id="btn-tp-alt">&#191;No te deja entrar? Usa la cookie en su lugar</button>
+
+        <div class="field" id="field-tp-cookie" style="display:none">
+          <label class="field-label" for="inp-tp-cookie">Cookie <code>Production_tpAuth</code></label>
+          <input class="input" id="inp-tp-cookie" type="text" autocapitalize="none"
+                 autocorrect="off" spellcheck="false" placeholder="Valor de Production_tpAuth">
+          <div class="hint">
+            Abre <b>app.trainingpeaks.com</b> en el ordenador &#8594; F12 &#8594;
+            Application &#8594; Cookies &#8594; copia <code>Production_tpAuth</code> y
+            p&#233;galo aqu&#237;. No toca tu contrase&#241;a.
+          </div>
+          <button class="btn-primary" id="btn-tp-cookie" style="margin-top:8px">Conectar con la cookie</button>
+        </div>
+      </div>
     </div>
 
     <button class="btn-demo" id="btn-demo">Probar con datos demo</button>
 
     <div class="setup-note">
       Tus credenciales se guardan solo en este dispositivo (localStorage).<br>
-      Se usan para hablar con Intervals.icu o Garmin Connect a trav&#233;s de tu proxy.
+      Se usan para hablar con Intervals.icu, Garmin Connect o TrainingPeaks a trav&#233;s de tu proxy.
     </div>
   </div>
 </div>
@@ -1294,7 +1352,7 @@ button{border:0; background:none; cursor:pointer; padding:0;}
       </div>
 
       <!-- Diagn&#243;stico de la &#250;ltima sincronizaci&#243;n con Garmin -->
-      <div class="section-title" id="diag-title" style="display:none;">Diagn&#243;stico Garmin</div>
+      <div class="section-title" id="diag-title" style="display:none;">Diagn&#243;stico</div>
       <div class="settings-card" id="diag-card" style="display:none;">
         <div class="set-row">
           <span class="k">Ventana</span>
@@ -1323,6 +1381,10 @@ button{border:0; background:none; cursor:pointer; padding:0;}
         <div class="set-row">
           <span class="k">Actividades</span>
           <span class="v" id="diag-acts">&#8212;</span>
+        </div>
+        <div class="set-row" id="row-diag-pmc" style="display:none">
+          <span class="k">PMC (CTL/ATL)</span>
+          <span class="v" id="diag-pmc">&#8212;</span>
         </div>
       </div>
 
@@ -1411,8 +1473,10 @@ var APP_VERSION  = '3.0.0';
 var S = {
   athleteId:   '',
   apiKey:      '',
-  source:      'intervals',      // 'intervals' | 'garmin'
+  source:      'intervals',      // 'intervals' | 'garmin' | 'trainingpeaks'
   garmin:      { refreshToken:'', clientId:'', displayName:'' },
+  tp:          { cookie:'', refreshToken:'', accessToken:'', expires:0,
+                 athleteId:'', email:'', displayName:'' },
   mfaState:    '',
   mfaMethod:   '',
   pickSource:  'intervals',      // fuente elegida en la pantalla de setup
@@ -1424,6 +1488,12 @@ var S = {
   selectedDay: null,
   chatHistory: []
 };
+
+/* Estado vacío de la 3&#186; v&#237;a: misma forma que S.tp */
+function tpBlank(){
+  return { cookie:'', refreshToken:'', accessToken:'', expires:0,
+           athleteId:'', email:'', displayName:'' };
+}
 
 /* Medias de referencia (60 días) — las lee calcScore() */
 var avgHRV = 0, avgHR = 0, avgSleep = 0;
@@ -1453,6 +1523,14 @@ function text2html(s){
 
 function round1(n){ return Math.round(n * 10) / 10; }
 function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+/* Nombre visible de cada v&#237;a de datos. Todas las etiquetas de la app pasan
+   por aqu&#237;, para que a&#241;adir una fuente nueva no deje r&#243;tulos viejos. */
+function sourceName(src){
+  if (src === 'garmin')        return 'Garmin Connect';
+  if (src === 'trainingpeaks') return 'TrainingPeaks';
+  return 'Intervals.icu';
+}
 
 /* Horas de sueño: máximo 1 decimal y sin el ".0" sobrante.
    (sleepSecs/3600 daba cosas como 7.483333333333333) */
@@ -1585,6 +1663,9 @@ function saveConfig(){
   if (S.source === 'garmin') {
     safeSet('riq_config', { source:'garmin', athleteId: S.athleteId || '', apiKey: '',
                             garmin: S.garmin });
+  } else if (S.source === 'trainingpeaks') {
+    safeSet('riq_config', { source:'trainingpeaks', athleteId: S.athleteId || '', apiKey: '',
+                            tp: S.tp });
   } else {
     safeSet('riq_config', { source:'intervals', athleteId: S.athleteId, apiKey: S.apiKey });
   }
@@ -1870,6 +1951,7 @@ function apiFetch(url, authHeader){
 
 function fetchData(){
   if (S.source === 'garmin') return fetchGarminData();
+  if (S.source === 'trainingpeaks') return fetchTpData();
 
   var authHeader = 'Basic ' + btoa('API_KEY:' + S.apiKey);
   var oldest = ymd(shiftDays(new Date(), -60));
@@ -1996,8 +2078,9 @@ function garminDiag(r, rows, acts){
   };
 }
 
-function garminWarn(dg){
+function garminWarn(dg, brand){
   if (!dg) return '';
+  brand = brand || 'Garmin';
   var names = [], det = [];
   if (!dg.sleepDays) {
     names.push('sue&#241;o');
@@ -2011,12 +2094,220 @@ function garminWarn(dg){
   }
   if (!det.length) {
     if (dg.todaySleep === null || dg.todaySleep === undefined) {
-      return '&#9888;&#65039; Garmin: hoy sin sue&#241;o a&#250;n (' +
+      return '&#9888;&#65039; ' + brand + ': hoy sin sue&#241;o a&#250;n (' +
              esc(dg.sleepDays) + ' d&#237;as anteriores s&#237;)';
     }
     return '';
   }
-  return '&#9888;&#65039; Sin ' + names.join(' ni ') + ' de Garmin<br>' + det.join(' &middot; ');
+  return '&#9888;&#65039; Sin ' + names.join(' ni ') + ' de ' + brand + '<br>' + det.join(' &middot; ');
+}
+
+/* ---------- 7c. TRAININGPEAKS — 3&#186; v&#237;a de obtenci&#243;n de datos ----------
+   Ver README §4.7. La API oficial de TrainingPeaks no est&#225; abierta a uso
+   personal, as&#237; que el worker reproduce el flujo de la app web:
+   cookie Production_tpAuth → token Bearer → m&#233;tricas diarias + PMC. */
+
+function tpPost(payload){
+  if (!MY_PROXY || MY_PROXY.indexOf('AQUI_TU_DOMINIO') >= 0) {
+    return Promise.reject(new Error('Sin proxy: despliega worker.js en Cloudflare Workers para usar TrainingPeaks.'));
+  }
+  return fetch(MY_PROXY + '/trainingpeaks', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+    cache:   'no-store'
+  }).then(function(res){
+    return res.json().catch(function(){ return {}; }).then(function(j){
+      if (!res.ok || !j || j.ok === false) {
+        var e = new Error((j && j.error) ? j.error : ('TrainingPeaks devolvi&#243; HTTP ' + res.status + '.'));
+        e.gCode = (j && j.code) || '';
+        throw e;
+      }
+      return j;
+    });
+  });
+}
+
+/* Los endpoints de m&#233;tricas devuelven [{timeStamp, details:[{type,value}]}].
+   Los tipos son num&#233;ricos (5 Pulse, 6 sue&#241;o, 9 peso, 60 HRV); por si
+   TrainingPeaks los cambia tambi&#233;n se aceptan nombres literales. */
+var TP_TYPES = { '5': 'restingHR', '6': 'sleep', '9': 'weight', '60': 'hrv' };
+var TP_NAMES = {
+  pulse: 'restingHR', restingheartrate: 'restingHR', restinghr: 'restingHR',
+  hrv: 'hrv',
+  sleep: 'sleep', sleephours: 'sleep', sleephoursvalue: 'sleep',
+  weight: 'weight', weightinkilograms: 'weight'
+};
+function tpField(type){
+  if (type === null || type === undefined) return '';
+  var t = String(type).toLowerCase();
+  return TP_TYPES[t] || TP_NAMES[t] || '';
+}
+
+function tpToRows(g){
+  var rows = {}, ids = [], i;
+  function row(id){
+    if (!id) return null;
+    if (!rows[id]) {
+      rows[id] = { id: id, hrv: null, restingHR: null, sleep: null, stages: null,
+                   ctl: 0, atl: 0, body: null };
+      ids.push(id);
+    }
+    return rows[id];
+  }
+
+  /* M&#233;tricas diarias (FC reposo, sue&#241;o, peso, HRV) */
+  var mrec = recordsOf(g && g.metrics);
+  for (i = 0; i < mrec.length; i++) {
+    var m = mrec[i];
+    if (!m || typeof m !== 'object') continue;
+    var det = m.details;
+    if (!det || typeof det !== 'object') continue;
+    var mid = anyDate(m);
+    if (!mid) continue;
+    var r = row(mid);
+    if (!r) continue;
+
+    var list = det, k;
+    if (Object.prototype.toString.call(list) !== '[object Array]') {
+      list = [];
+      for (k in det) {
+        if (Object.prototype.hasOwnProperty.call(det, k)) list.push({ type: k, value: det[k] });
+      }
+    }
+    for (var d = 0; d < list.length; d++) {
+      var it = list[d];
+      if (!it || typeof it !== 'object') continue;
+      var f = tpField(it.type !== undefined ? it.type : it.key);
+      var v = parseFloat(it.value);
+      if (!f || !isFinite(v) || v <= 0) continue;
+      if (f === 'restingHR')      r.restingHR = Math.round(v);
+      else if (f === 'hrv')       r.hrv = Math.round(v);
+      else if (f === 'sleep')     r.sleep = Math.round(v * 10) / 10;
+      else if (f === 'weight') {
+        if (!r.body) r.body = {};
+        r.body.weight = Math.round((v > 300 ? v / 1000 : v) * 10) / 10;
+      }
+    }
+  }
+
+  /* PMC diario: TrainingPeaks ya calcula CTL/ATL/TSB, no hace falta derivarlos */
+  var frec = recordsOf(g && g.fitness);
+  for (i = 0; i < frec.length; i++) {
+    var p = frec[i];
+    if (!p || typeof p !== 'object') continue;
+    if (p.ctl === undefined && p.atl === undefined) continue;
+    var pid = anyDate(p);
+    if (!pid) continue;
+    var pr = row(pid);
+    if (!pr) continue;
+    var c = parseFloat(p.ctl), a = parseFloat(p.atl);
+    if (isFinite(c)) pr.ctl = Math.round(c);
+    if (isFinite(a)) pr.atl = Math.round(a);
+  }
+
+  var out = [];
+  for (i = 0; i < ids.length; i++) out.push(rows[ids[i]]);
+  out.sort(function(x, y){ return x.id < y.id ? -1 : (x.id > y.id ? 1 : 0); });
+  return out;
+}
+
+function tpActivities(g){
+  var src = recordsOf(g && g.workouts), out = [], i;
+  var hoy = ymd(new Date());
+  for (i = 0; i < src.length; i++) {
+    var a = src[i];
+    if (!a || typeof a !== 'object') continue;
+    if (!a.title && !a.workoutDay && !a.workoutTypeName) continue;
+    var when = anyDate(a);
+    if (!when || when > hoy) continue;          // fuera los entrenos a&#250;n planificados
+    var hours = parseFloat(a.totalTime !== undefined ? a.totalTime : a.totalTimePlanned);
+    if (!isFinite(hours) || hours <= 0) hours = 0;
+    var secs = Math.round(hours * 3600);
+    out.push({
+      name:              a.title || a.name || 'Entreno',
+      start_date:        when,
+      type:              a.workoutTypeName || a.workoutTypeValueId || '',
+      distance:          numv(a.distance),
+      duration:          secs,
+      moving_time:       secs,
+      average_heartrate: null
+    });
+  }
+  return out;
+}
+
+/* Resume la &#250;ltima sincronizaci&#243;n de TrainingPeaks: d&#237;as con dato por
+   se&#241;al + estado HTTP y claves de cada endpoint. HRV/sue&#241;o/FC/peso salen
+   del MISMO endpoint (`consolidatedtimedmetrics`), as&#237; que comparten celda. */
+function tpDiag(r, rows, acts){
+  var d = r.diag || null;
+  var today = ymd(new Date()), i;
+  var hrvDays = 0, sleepDays = 0, rhrDays = 0, bodyDays = 0, fitDays = 0;
+  var tHrv = null, tSleep = null, tRhr = null;
+  for (i = 0; i < rows.length; i++) {
+    if (rows[i].hrv) hrvDays++;
+    if (rows[i].sleep !== null && rows[i].sleep !== undefined) sleepDays++;
+    if (rows[i].restingHR) rhrDays++;
+    if (rows[i].body && rows[i].body.weight) bodyDays++;
+    if (rows[i].ctl || rows[i].atl) fitDays++;
+    if (rows[i].id === today) {
+      tHrv = rows[i].hrv; tSleep = rows[i].sleep; tRhr = rows[i].restingHR;
+    }
+  }
+  var m = (d && d.metrics) || null;
+  return {
+    start: r.start || '', end: r.end || '',
+    days: rows.length,
+    hrvDays: hrvDays, sleepDays: sleepDays, rhrDays: rhrDays,
+    bodyDays: bodyDays, fitDays: fitDays,
+    actsCount: (acts && acts.length) || 0,
+    todayHrv: tHrv, todaySleep: tSleep, todayRhr: tRhr,
+    hrv:    m,
+    rhr:    m,
+    weight: m ? { s: m.s, k: m.k, n: bodyDays } : null,
+    act:    (d && d.workouts) || null,
+    pmc:    (d && d.fitness) || null,
+    sleep:  sleepDiagCell(m ? [{ s: m.s, k: m.k }] : [], [])
+  };
+}
+
+function fetchTpData(){
+  var end   = ymd(new Date());
+  var start = ymd(shiftDays(new Date(), -60));
+
+  return tpPost({
+    action:       'sync',
+    cookie:       S.tp.cookie       || '',
+    refreshToken: S.tp.refreshToken || '',
+    accessToken:  S.tp.accessToken  || '',
+    expires:      S.tp.expires      || 0,
+    athleteId:    S.tp.athleteId    || '',
+    displayName:  S.tp.displayName  || '',
+    start:        start,
+    end:          end
+  }).then(function(r){
+    if (r.cookie)       S.tp.cookie       = r.cookie;
+    if (r.accessToken)  S.tp.accessToken  = r.accessToken;
+    if (r.refreshToken) S.tp.refreshToken = r.refreshToken;
+    if (r.expires)      S.tp.expires      = r.expires;
+    if (r.athleteId)    S.tp.athleteId    = r.athleteId;
+    if (r.displayName)  S.tp.displayName  = r.displayName;
+    saveConfig();
+
+    var rows = tpToRows(r.data);
+    if (!rows.length) throw new Error('NO_DATA_TP');
+    var acts = tpActivities(r.data);
+    var data = assembleData(rows, acts);
+    if (!data) throw new Error('NO_DATA_TP');
+    data.source = 'trainingpeaks';
+
+    S.tp.diag = tpDiag(r, rows, acts);
+    saveConfig();
+    var warn = garminWarn(S.tp.diag, 'TrainingPeaks');
+    if (warn) setTimeout(function(){ showToast(warn); }, 900);
+    return data;
+  });
 }
 
 /* --- utilidades de normalizaci&#243;n ------------------------------------ */
@@ -2142,9 +2433,10 @@ function flattenObj(rec){
   return out;
 }
 
-/* Fecha de un registro de composici&#243;n corporal: admite ISO o epoch (algunos
-   weigh-in solo traen `weighInTimeInMillis`). */
-function bodyDate(o){
+/* D&#237;a de cualquier registro: admite ISO (`calendarDate`, `workoutDay`,
+   `timeStamp`…) o epoch (algunos weigh-in solo traen `weighInTimeInMillis`).
+   Compartida por las tres v&#237;as de datos. */
+function anyDate(o){
   var d = garminDate(o);
   if (d) return d;
   if (!o || typeof o !== 'object') return '';
@@ -2364,7 +2656,7 @@ function garminToRows(g){
     // filtro, la MEDIA del rango se colaría con la fecha de inicio y taparía
     // los datos reales de cada día.
     if (isBodyWrap(br)) continue;
-    var id4 = bodyDate(br);
+    var id4 = anyDate(br);
     if (!id4) continue;
     var got = pickBody(br), gk, gotN = 0;
     for (gk in got) { if (got.hasOwnProperty(gk) && got[gk]) gotN++; }
@@ -2692,13 +2984,37 @@ function friendlyError(e){
   var m = String(e && e.message ? e.message : e);
   var code = (e && e.gCode) || '';
 
+  /* --- TrainingPeaks (3&#186; v&#237;a de datos) --- */
+  if (code === 'TP_BAD_CREDENTIALS') {
+    return 'Email o contrase&#241;a de <b>TrainingPeaks</b> incorrectos.<br><br>' +
+           'Usa exactamente los mismos datos con los que entras en ' +
+           '<b>app.trainingpeaks.com</b>.';
+  }
+  if (code === 'TP_BLOCKED') {
+    return 'TrainingPeaks ha exigido una comprobaci&#243;n extra (captcha o ' +
+           'verificaci&#243;n en dos pasos) y no deja entrar a la app.<br><br>' +
+           '<b>Alternativa:</b> pega tu cookie <code>Production_tpAuth</code>. ' +
+           'Abre <b>app.trainingpeaks.com</b> en el ordenador, abre las herramientas de ' +
+           'desarrollador (F12) &#8594; Application &#8594; Cookies &#8594; copia el valor de ' +
+           '<code>Production_tpAuth</code> y p&#233;galo en el formulario.';
+  }
+  if (code === 'TP_REAUTH') {
+    return 'La sesi&#243;n con <b>TrainingPeaks</b> ha caducado.<br><br>Vuelve a conectar tu cuenta.';
+  }
+  if (m === 'NO_DATA_TP') {
+    return 'No se han encontrado datos recientes en tu cuenta de <b>TrainingPeaks</b>.<br><br>' +
+           'Comprueba en la web que tienes m&#233;tricas (peso, sue&#241;o, FC) o entrenos ' +
+           'registrados en los &#250;ltimos 60 d&#237;as.';
+  }
+
   /* --- Garmin Connect (2&#186; v&#237;a de datos) --- */
   if (code === 'BAD_CREDENTIALS') {
     return 'Email o contrase&#241;a de <b>Garmin</b> incorrectos.<br><br>' +
            'Usa exactamente los mismos datos con los que entras en la app Garmin Connect.';
   }
   if (code === 'RATE_LIMIT') {
-    return 'Garmin ha limitado los intentos de acceso.<br><br>' +
+    return (S.source === 'trainingpeaks' ? 'TrainingPeaks' : 'Garmin') +
+           ' ha limitado los intentos de acceso.<br><br>' +
            'Espera unos minutos y vuelve a intentarlo.';
   }
   if (code === 'CAPTCHA' || code === 'BLOCKED') {
@@ -2907,7 +3223,7 @@ function renderDashboard(){
 
   if ($('sync-label')) {
     // La fuente puede cambiar entre sesiones: el rótulo tiene que seguirla.
-    var srcName = S.source === 'garmin' ? 'Garmin Connect' : 'Intervals.icu';
+    var srcName = sourceName(S.source);
     $('sync-label').innerHTML = '<span class="dot"></span> ' +
       (S.isDemo ? 'Modo demo &#183; datos de ejemplo'
                 : 'Sincronizado &#183; ' + srcName);
@@ -3079,7 +3395,7 @@ function showDayDetail(key){
     html += row('TSB', (d.tsb > 0 ? '+' : '') + d.tsb, d.tsb < -10 ? '#f87171' : (d.tsb > 5 ? '#22d3a0' : null));
   } else {
     html += '<div class="empty-note">Sin datos de ' +
-            (S.source === 'garmin' ? 'Garmin' : 'Intervals.icu') + ' para este d&#237;a.</div>';
+            sourceName(S.source) + ' para este d&#237;a.</div>';
   }
 
   if (lg) {
@@ -3407,18 +3723,25 @@ function renderSettings(){
       S.isDemo ? 'modo demo'
                : (S.source === 'garmin'
                    ? esc(S.garmin.displayName || 'Garmin Connect')
-                   : (S.athleteId ? esc(S.athleteId) : '&#8212;'));
+                   : (S.source === 'trainingpeaks'
+                       ? esc((S.tp && (S.tp.displayName || S.tp.email)) || 'TrainingPeaks')
+                       : (S.athleteId ? esc(S.athleteId) : '&#8212;')));
   if ($('display-mode'))    $('display-mode').innerHTML    =
-      S.isDemo ? 'Datos de ejemplo' : (S.source === 'garmin' ? 'Garmin Connect' : 'Intervals.icu');
+      S.isDemo ? 'Datos de ejemplo' : sourceName(S.source);
   if ($('display-log-count'))$('display-log-count').innerHTML = S.logs.length;
   if ($('display-score'))   $('display-score').innerHTML   = S.data ?
       (S.data.today.recoveryScore + ' &#183; ' + scoreLabel(S.data.today.recoveryScore)) : '&#8212;';
 
-  /* Panel de diagn&#243;stico de la &#250;ltima sincronizaci&#243;n con Garmin */
-  var dg = (S.source === 'garmin' && S.garmin && S.garmin.diag) ? S.garmin.diag : null;
+  /* Panel de diagn&#243;stico de la &#250;ltima sincronizaci&#243;n (por fuente) */
+  var dg = null;
+  if (S.source === 'garmin' && S.garmin && S.garmin.diag) dg = S.garmin.diag;
+  else if (S.source === 'trainingpeaks' && S.tp && S.tp.diag) dg = S.tp.diag;
   if ($('diag-card')) {
     $('diag-card').style.display = dg ? '' : 'none';
-    if ($('diag-title')) $('diag-title').style.display = dg ? '' : 'none';
+    if ($('diag-title')) {
+      $('diag-title').style.display = dg ? '' : 'none';
+      $('diag-title').innerHTML = 'Diagn&#243;stico ' + esc(sourceName(S.source));
+    }
     if (dg) {
       if ($('diag-window')) $('diag-window').innerHTML =
         esc(dg.start || '') + ' &#8594; ' + esc(dg.end || '');
@@ -3426,7 +3749,8 @@ function renderSettings(){
         (dg.days || 0) + ' d&#237;as &#183; HRV ' + (dg.hrvDays || 0) +
         ' &#183; sue&#241;o ' + (dg.sleepDays || 0) +
         ' &#183; FC ' + (dg.rhrDays || 0) +
-        ' &#183; peso ' + (dg.bodyDays || 0);
+        ' &#183; peso ' + (dg.bodyDays || 0) +
+        (dg.fitDays ? ' &#183; PMC ' + dg.fitDays : '');
       if ($('diag-hrv')) $('diag-hrv').innerHTML = diagCell(dg.hrv) +
         (dg.todayHrv ? ' &#183; hoy <b>' + dg.todayHrv + '</b>' : ' &#183; hoy sin dato');
       if ($('diag-sleep')) $('diag-sleep').innerHTML = diagCell(dg.sleep) +
@@ -3442,6 +3766,9 @@ function renderSettings(){
         (dg.bodyDays ? '' : ' &#183; sin peso');
       if ($('diag-acts')) $('diag-acts').innerHTML =
         (dg.actsCount || 0) + ' &#183; ' + diagCell(dg.act);
+      if ($('row-diag-pmc')) $('row-diag-pmc').style.display = dg.pmc ? '' : 'none';
+      if ($('diag-pmc') && dg.pmc) $('diag-pmc').innerHTML = diagCell(dg.pmc) +
+        (dg.fitDays ? ' &#183; <b>' + dg.fitDays + '</b> d' : '');
     }
   }
 }
@@ -3518,8 +3845,8 @@ function buildSystemPrompt(){
          'Responde siempre en español, conciso y práctico (máximo 200 palabras). ' +
          'Da recomendaciones concretas de entrenamiento y descanso basándote en los datos. ' +
          'No afirmas que eres un médico ni das diagnósticos. ' +
-         'Fuente de datos: ' + (S.source === 'garmin' ? 'Garmin Connect (incluye fases reales del sueño)'
-                                                      : 'Intervals.icu') + '. ' +
+         'Fuente de datos: ' + sourceName(S.source) + (S.source === 'garmin'
+                                                      ? ' (incluye fases reales del sueño)' : '') + '. ' +
          'DATOS DEL ATLETA — ' + line + logLine;
 }
 
@@ -3666,7 +3993,14 @@ function doConnect(){
   });
 }
 
-/* Conexi&#243;n con Garmin Connect (2&#186; v&#237;a) */
+/* Conexi&#243;n con la 2&#186; y 3&#186; v&#237;a. Formularios en mapa: a&#241;adir una fuente es
+   a&#241;adir una entrada (el resto de la app pregunta por `sourceName()`). */
+var SOURCE_FORMS = {
+  intervals:     'form-intervals',
+  garmin:        'form-garmin',
+  trainingpeaks: 'form-tp'
+};
+
 function pickSource(src){
   S.pickSource = src;
   var opts = document.querySelectorAll('.src-opt');
@@ -3674,9 +4008,12 @@ function pickSource(src){
     var on = opts[i].getAttribute('data-src') === src;
     if (on) opts[i].classList.add('active'); else opts[i].classList.remove('active');
   }
-  var fi = $('form-intervals'), fg = $('form-garmin');
-  if (fi) fi.style.display = (src === 'intervals') ? '' : 'none';
-  if (fg) fg.style.display = (src === 'garmin') ? '' : 'none';
+  var id, el;
+  for (id in SOURCE_FORMS) {
+    if (!Object.prototype.hasOwnProperty.call(SOURCE_FORMS, id)) continue;
+    el = $(SOURCE_FORMS[id]);
+    if (el) el.style.display = (id === src) ? '' : 'none';
+  }
   if (src !== 'garmin') hideMfaField();
 }
 
@@ -3734,6 +4071,77 @@ function doConnectGarmin(){
   });
 }
 
+/* Conexi&#243;n con TrainingPeaks: email+contrase&#241;a (por defecto) o la cookie
+   `Production_tpAuth` pegada a mano cuando TP exige captcha o 2FA. */
+function showTpCookieField(on){
+  var f = $('field-tp-cookie');
+  if (f) f.style.display = on ? '' : 'none';
+}
+
+function tpConnected(r, email){
+  S.source = 'trainingpeaks';
+  S.isDemo = false;
+  S.tp = {
+    cookie:       r.cookie       || '',
+    refreshToken: r.refreshToken || '',
+    accessToken:  r.accessToken  || '',
+    expires:      r.expires      || 0,
+    athleteId:    r.athleteId    || '',
+    email:        email || '',
+    displayName:  r.displayName  || ''
+  };
+  if ($('inp-tp-pass'))   $('inp-tp-pass').value   = '';
+  if ($('inp-tp-cookie')) $('inp-tp-cookie').value = '';
+  saveConfig();
+  setLoadText('Descargando tus datos de TrainingPeaks&#8230;');
+  return fetchData().then(function(d){
+    if (!d) return d;
+    initApp(d);
+    showTab('dashboard');
+    showToast('&#9989; Conectado con TrainingPeaks' +
+              (S.tp.displayName ? ' &#183; ' + esc(S.tp.displayName) : ''));
+    return d;
+  });
+}
+
+function tpConnectFailed(e){
+  hideLoading();
+  if (e && e.gCode === 'TP_BLOCKED') showTpCookieField(true);
+  if (e && e.gCode === 'TP_REAUTH') {
+    S.tp = { cookie:'', refreshToken:'', accessToken:'', expires:0,
+             athleteId:'', email:'', displayName:'' };
+  }
+  showErrorModal(friendlyError(e));
+}
+
+function doConnectTp(){
+  var email = ($('inp-tp-email') ? $('inp-tp-email').value : '').replace(/^\s+|\s+$/g, '');
+  var pass  = ($('inp-tp-pass')  ? $('inp-tp-pass').value  : '');
+
+  if (!email) { showErrorModal('Introduce el <b>email</b> de tu cuenta TrainingPeaks.'); return; }
+  if (!pass)  { showErrorModal('Introduce la <b>contrase&#241;a</b> de tu cuenta TrainingPeaks.'); return; }
+
+  showLoading('Conectando con TrainingPeaks&#8230;');
+  tpPost({ action: 'login', email: email, password: pass })
+    .then(function(r){ return tpConnected(r, email); })
+    .catch(tpConnectFailed);
+}
+
+function doConnectTpCookie(){
+  var email = ($('inp-tp-email') ? $('inp-tp-email').value : '').replace(/^\s+|\s+$/g, '');
+  var ck    = ($('inp-tp-cookie') ? $('inp-tp-cookie').value : '').replace(/^\s+|\s+$/g, '');
+
+  if (!ck) {
+    showErrorModal('Pega el valor de la cookie <b>Production_tpAuth</b> de TrainingPeaks.');
+    return;
+  }
+
+  showLoading('Validando la cookie de TrainingPeaks&#8230;');
+  tpPost({ action: 'cookie', cookie: ck, email: email })
+    .then(function(r){ return tpConnected(r, email); })
+    .catch(tpConnectFailed);
+}
+
 function doSync(){
   if (S.isDemo) {
     showLoading('Actualizando datos demo&#8230;');
@@ -3746,6 +4154,10 @@ function doSync(){
   }
   if (S.source === 'garmin') {
     if (!S.garmin || !S.garmin.refreshToken) {
+      showToast('&#9888;&#65039; No hay credenciales guardadas'); return;
+    }
+  } else if (S.source === 'trainingpeaks') {
+    if (!S.tp || !S.tp.cookie) {
       showToast('&#9888;&#65039; No hay credenciales guardadas'); return;
     }
   } else if (!S.apiKey) {
@@ -3768,6 +4180,7 @@ function doLogout(){
   S.apiKey    = '';
   S.source    = 'intervals';
   S.garmin    = { refreshToken:'', clientId:'', displayName:'' };
+  S.tp        = tpBlank();
   S.mfaState  = '';
   S.mfaMethod = '';
   S.isDemo    = false;
@@ -3783,6 +4196,10 @@ function doLogout(){
   if ($('inp-athlete')) $('inp-athlete').value = '';
   if ($('inp-g-email')) $('inp-g-email').value = '';
   if ($('inp-g-pass'))  $('inp-g-pass').value  = '';
+  if ($('inp-tp-email')) $('inp-tp-email').value = '';
+  if ($('inp-tp-pass'))  $('inp-tp-pass').value  = '';
+  if ($('inp-tp-cookie')) $('inp-tp-cookie').value = '';
+  showTpCookieField(false);
   hideMfaField();
   pickSource('intervals');
 
@@ -3800,18 +4217,30 @@ function restoreSession(){
   if (!cfg) return false;
 
   var isGarmin = cfg.source === 'garmin';
+  var isTp     = cfg.source === 'trainingpeaks';
   if (isGarmin) {
     if (!cfg.garmin || !cfg.garmin.refreshToken) return false;
     S.source = 'garmin';
     S.garmin = cfg.garmin;
+    S.tp     = tpBlank();
     S.athleteId = cfg.athleteId || '';
     S.apiKey    = '';
     pickSource('garmin');
     if ($('inp-g-email') && S.garmin.displayName) $('inp-g-email').value = '';
+  } else if (isTp) {
+    if (!cfg.tp || !cfg.tp.cookie) return false;
+    S.source = 'trainingpeaks';
+    S.tp     = cfg.tp;
+    S.garmin = { refreshToken:'', clientId:'', displayName:'' };
+    S.athleteId = cfg.athleteId || '';
+    S.apiKey    = '';
+    pickSource('trainingpeaks');
+    if ($('inp-tp-email')) $('inp-tp-email').value = cfg.tp.email || '';
   } else {
     if (!cfg.athleteId || !cfg.apiKey) return false;
     S.source    = 'intervals';
     S.garmin    = { refreshToken:'', clientId:'', displayName:'' };
+    S.tp        = tpBlank();
     S.athleteId = cfg.athleteId;
     S.apiKey    = cfg.apiKey;
     pickSource('intervals');
@@ -3826,17 +4255,22 @@ function restoreSession(){
     showToast('&#9989; Sesi&#243;n restaurada');
   }).catch(function(e){
     // Fallo al restaurar: limpiar y dejar el setup limpio
-    if (isGarmin && e && (e.gCode === 'REFRESH_FAILED' || e.gCode === 'TOKEN_MISSING')) {
+    if ((isGarmin || isTp) && e && (e.gCode === 'REFRESH_FAILED' || e.gCode === 'TOKEN_MISSING' ||
+        e.gCode === 'TP_REAUTH')) {
       // Solo se ha caducado el token: no borramos nada, hay que volver a conectar
       hideLoading();
-      showErrorModal('La sesi&#243;n con <b>Garmin</b> ha caducado.<br><br>' +
+      showErrorModal('La sesi&#243;n con <b>' + sourceName(cfg.source) +
+                      '</b> ha caducado.<br><br>' +
                       friendlyError(e) + '<br><br>Conecta de nuevo con tu cuenta.');
       return;
     }
     safeDel('riq_config');
     S.apiKey = '';
     S.garmin = { refreshToken:'', clientId:'', displayName:'' };
+    S.tp     = tpBlank();
     if ($('inp-key')) $('inp-key').value = '';
+    if ($('inp-tp-pass')) $('inp-tp-pass').value = '';
+    if ($('inp-tp-cookie')) $('inp-tp-cookie').value = '';
     hideLoading();
     showErrorModal('No se pudo restaurar la sesi&#243;n.<br><br>' + friendlyError(e) +
                     '<br><br>Revisa tus credenciales o reconecta manualmente.');
@@ -3860,6 +4294,18 @@ wire('src-switch', 'click', function(e){
 });
 wire('btn-connect', 'click', doConnect);
 wire('btn-garmin', 'click', doConnectGarmin);
+wire('btn-tp', 'click', doConnectTp);
+wire('btn-tp-cookie', 'click', doConnectTpCookie);
+wire('btn-tp-alt', 'click', function(){
+  var f = $('field-tp-cookie');
+  if (f) showTpCookieField(f.style.display === 'none');
+});
+wire('inp-tp-pass', 'keydown', function(e){
+  if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); doConnectTp(); }
+});
+wire('inp-tp-cookie', 'keydown', function(e){
+  if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); doConnectTpCookie(); }
+});
 wire('inp-g-pass', 'keydown', function(e){
   if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); doConnectGarmin(); }
 });

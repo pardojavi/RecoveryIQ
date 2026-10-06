@@ -519,10 +519,10 @@ eq(run('isBodyWrap({dateWeightList:[], totalAverage:{weight:70000}})'), true,
    'el envoltorio con totalAverage se descarta');
 eq(run('isBodyWrap({calendarDate:"2026-10-05", weight:70000})'), false,
    'un registro plano sí se acepta');
-ok(/^\d{4}-\d{2}-\d{2}$/.test(run('bodyDate({date:1749975276000})')),
-   'bodyDate acepta epoch en ms', run('bodyDate({date:1749975276000})'));
-eq(run('bodyDate({calendarDate:"2026-10-05", weight:70000})'), '2026-10-05',
-   'bodyDate usa calendarDate');
+ok(/^\d{4}-\d{2}-\d{2}$/.test(run('anyDate({date:1749975276000})')),
+   'anyDate acepta epoch en ms', run('anyDate({date:1749975276000})'));
+eq(run('anyDate({calendarDate:"2026-10-05", weight:70000})'), '2026-10-05',
+   'anyDate usa calendarDate');
 
 const wBody = run('(function(){' +
   'var d = assembleData(garminToRows(window.__payload), ' +
