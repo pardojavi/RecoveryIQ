@@ -415,10 +415,15 @@ Por eso la app:
    se duerme) y lo dice explícitamente en la hoja, para que nadie lo confunda
    con un dato real.
 
-> **Garmin Connect sí las trae**: `deepSleepSeconds`, `lightSleepSeconds`,
-> `remSleepSeconds` y `awakeSleepSeconds` del endpoint de sueño. Con esa fuente
-> la hoja muestra siempre **fases reales** (caso 1), nunca la estimación. Es la
-> razón principal por la que merece la pena tener las dos vías.
+> **Garmin Connect sí las trae**, con dos familias de nombres según el endpoint:
+> en `dailySleepDTO` son `deepSleepSeconds`, `lightSleepSeconds`,
+> `remSleepSeconds` y `awakeSleepSeconds`; en `individualStats` (el endpoint por
+> rango, el que usa la app) vienen anidadas en un subobjeto `values`:
+> `values.deepTime`, `values.lightTime`, `values.remTime`, `values.awakeTime` y
+> `values.totalSleepTimeInSeconds`. El normalizador aplana `values` y acepta los
+> dos juegos de nombres. Con esa fuente la hoja muestra siempre **fases reales**
+> (caso 1), nunca la estimación. Es la razón principal por la que merece la pena
+> tener las dos vías.
 
 Además, todas las horas de sueño se muestran con **máximo 1 decimal y sin el `.0`
 sobrante** (`fmtSleep()`): `7.483333333333333` → `7.5`.

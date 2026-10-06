@@ -232,6 +232,49 @@ w.__sh8 = { sleep: [{ individualStats: [{
 }] }] };
 eq(run('garminToRows(window.__sh8)[0].id'), todayKey, 'sin timestamp usa calendarDate');
 
+console.log('\n== Garmin: forma REAL de individualStats (datos dentro de values) ==');
+function realSleepRows(n) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const key = dayKey(i), p = key.split('-');
+    // Fin de la noche a las 07:12 hora local (ms cuya lectura UTC ya es local)
+    const endMs = Date.UTC(+p[0], +p[1] - 1, +p[2], 7, 12, 0);
+    out.push({
+      calendarDate: key,
+      values: {
+        totalSleepTimeInSeconds: 24600,          // = deep+light+rem (sin awake)
+        deepTime: 5400, lightTime: 14400, remTime: 4800, awakeTime: 600,
+        localSleepEndTimeInMillis: endMs,
+        gmtSleepEndTimeInMillis: endMs,
+        restingHeartRate: 51, sleepScore: 81, sleepScoreQuality: 'GOOD'
+      }
+    });
+  }
+  return out;
+}
+w.__real = { sleep: [{ calendarDate: 'x',
+                       overallStats: { averageSleepScore: 80 },
+                       individualStats: realSleepRows(10) }] };
+const rreal = run('garminToRows(window.__real)');
+eq(rreal.length, 10, '10 noches desde individualStats + values');
+eq(rreal[9].sleep, 6.8, 'sueño = values.totalSleepTimeInSeconds (24600 s → 6.8 h)');
+eq(rreal[9].id, dayKey(0), 'fechado por localSleepEndTimeInMillis');
+eq(rreal[9].stages.deep, 1.5, 'profundo desde values.deepTime');
+eq(rreal[9].stages.light, 3.8, 'ligero desde values.lightTime (residual)');
+eq(rreal[9].stages.rem, 1.3, 'REM desde values.remTime');
+eq(rreal[9].stages.awake, 0.2, 'despierto desde values.awakeTime');
+eq(Math.round((rreal[9].stages.deep + rreal[9].stages.light +
+               rreal[9].stages.rem + rreal[9].stages.awake) * 10) / 10,
+   rreal[9].sleep, 'las 4 fases suman exactamente el total');
+eq(rreal[9].restingHR, 51, 'FC reposo desde values.restingHeartRate');
+ok(rreal[9].sleep > 0 && rreal.every(r => r.sleep > 0), 'todas las noches con sueño');
+w.__fl = run('flattenSleep({calendarDate:"2026-10-05", values:{deepTime:100, sleepScore:80}})');
+eq(w.__fl.deepTime, 100, 'flattenSleep aplanta values');
+eq(w.__fl.calendarDate, '2026-10-05', 'flattenSleep conserva lo propio');
+eq(w.__fl.values.deepTime, 100, 'flattenSleep no borra el original');
+eq(run('flattenSleep({a:1}).a'), 1, 'sin anidados devuelve el mismo objeto');
+eq(run('flattenSleep([1,2]).length'), 2, 'los arrays no se tocan');
+
 console.log('\n== Garmin: garminDiag() resume la sincronización ==');
 w.__dg = run('(function(){' +
   'var r=garminToRows(window.__payload); var a=garminActivities(window.__payload);' +

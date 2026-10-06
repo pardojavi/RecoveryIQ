@@ -2036,22 +2036,64 @@ function garminDate(o){
 
 function sec2h(secs){ return Math.round(secs / 360) / 10; } // segundos → horas (1 decimal)
 
+/* Epoch → d&#237;a UTC (Garmin guarda `*Local` como ms cuya lectura UTC ya es la
+   hora local del usuario). Acepta segundos, milisegundos, ISO o n&#250;mero en
+   cadena; devuelve 0 si no es un timestamp. */
+function tsMs(v){
+  if (v === null || v === undefined) return 0;
+  if (typeof v === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}/.test(v)) return 0;   // ya es una fecha
+    v = parseFloat(v);
+  }
+  if (typeof v !== 'number' || !isFinite(v) || v <= 0) return 0;
+  if (v < 1e12) v = v * 1000;                     // segundos → ms
+  return v;
+}
+function utcDay(ms){
+  var d = new Date(ms);
+  return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+}
+
 /* El d&#237;a al que pertenece una noche = la ma&#241;ana en que te despertaste.
-   Garmin pone en `calendarDate` la fecha de inicio de la noche en algunas
-   cuentas, y entonces la noche de ayer cae fuera de "hoy" en el panel: se
-   prefiere el timestamp de fin (ms; en `*Local` el valor le&#237;do en UTC ya es
-   la hora local) para atribuir siempre la noche al d&#237;a en que amaneciste. */
+   `calendarDate` apunta a la noche anterior en algunas cuentas, y entonces la
+   noche de ayer cae fuera de "hoy" en el panel: se prefiere el timestamp de
+   fin. Cubre las dos familias de nombres de Garmin:
+   - dailySleepDTO: sleepEndTimestampLocal / sleepEndTimestampGMT
+   - individualStats: values.localSleepEndTimeInMillis / gmtSleepEndTimeInMillis */
 function sleepDay(s){
   if (!s || typeof s !== 'object') return '';
-  var t = s.sleepEndTimestampLocal || s.sleepEndTimestampGMT, d;
-  if (typeof t === 'string' && /^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
-  if (typeof t === 'string') t = parseFloat(t);
-  if (typeof t === 'number' && isFinite(t) && t > 0) {
-    if (t < 1e12) t = t * 1000;            // por si viniera en segundos
-    d = new Date(t);
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  var keys = ['sleepEndTimestampLocal', 'sleepEndTimestampGMT',
+              'localSleepEndTimeInMillis', 'gmtSleepEndTimeInMillis'];
+  for (var i = 0; i < keys.length; i++) {
+    var ms = tsMs(s[keys[i]]);
+    if (ms) { var day = utcDay(ms); if (day) return day; }
   }
   return '';
+}
+
+/* Las filas de /sleep-service/stats/sleep/daily traen los datos dentro de un
+   subobjeto `values` (totalSleepTimeInSeconds, deepTime, lightTime, remTime,
+   awakeTime, localSleepEndTimeInMillis…). Se aplanan a un solo nivel para que
+   el normalizador no tenga que conocer cada c&#225;psula. */
+function flattenSleep(rec){
+  if (!rec || typeof rec !== 'object') return rec;
+  if (Object.prototype.toString.call(rec) === '[object Array]') return rec;
+  var nested = [], k, v, i, out;
+  for (k in rec) {
+    if (!rec.hasOwnProperty(k)) continue;
+    v = rec[k];
+    if (v && typeof v === 'object' &&
+        Object.prototype.toString.call(v) !== '[object Array]') nested.push(v);
+  }
+  if (!nested.length) return rec;
+  out = {};
+  for (k in rec) if (rec.hasOwnProperty(k)) out[k] = rec[k];
+  for (i = 0; i < nested.length; i++) {
+    for (k in nested[i]) {
+      if (nested[i].hasOwnProperty(k) && out[k] === undefined) out[k] = nested[i][k];
+    }
+  }
+  return out;
 }
 
 /* Carga diaria = suma del activityTrainingLoad de cada actividad.
@@ -2139,22 +2181,36 @@ function garminToRows(g){
   }
 
   /* Sue&#241;o + fases REALES (Garmin s&#237; las informa: Intervals.icu, no).
-     El worker manda los JSON de cada trozo tal cual: los abrimos todos. */
+     Hay dos familias de filas y hay que leer las dos:
+     - dailySleepDTO (familia plana):  sleepTimeSeconds, deepSleepSeconds…
+     - individualStats (por rango):    {calendarDate, values:{totalSleepTimeInSeconds,
+                                        deepTime, lightTime, remTime, awakeTime,
+                                        localSleepEndTimeInMillis, restingHeartRate…}}
+     Se aplanan y se aceptan ambos conjuntos de nombres. */
   var srec = recordsOf(g.sleep);
   for (i = 0; i < srec.length; i++) {
     var rec = srec[i] || {};
+    if (Object.prototype.toString.call(rec) === '[object Array]') continue;
     var s = (rec.dailySleepDTO && typeof rec.dailySleepDTO === 'object') ? rec.dailySleepDTO : rec;
+    s = flattenSleep(s);
     if (!s || typeof s !== 'object') continue;
     var id3 = sleepDay(s) || garminDate(s) || garminDate(rec);
     if (!id3) continue;
-    var deep  = numv(s.deepSleepSeconds), rem   = numv(s.remSleepSeconds),
-        light = numv(s.lightSleepSeconds), awake = numv(s.awakeSleepSeconds);
-    var total = numv(s.sleepTimeSeconds) || numv(s.totalSleepSeconds) || (deep + light + rem + awake);
+    var deep  = numv(s.deepSleepSeconds)  || numv(s.deepTime),
+        light = numv(s.lightSleepSeconds) || numv(s.lightTime),
+        rem   = numv(s.remSleepSeconds)   || numv(s.remTime),
+        awake = numv(s.awakeSleepSeconds) || numv(s.awakeTime);
+    var core = deep + light + rem;
+    // Manda el total explícito si lo hay (Garmin lo publica ya sin despierto);
+    // si no, se suma lo que haya. Las fases se encajan en el total después.
+    var total = numv(s.sleepTimeSeconds) || numv(s.totalSleepTimeInSeconds) ||
+                numv(s.totalSleepSeconds) || numv(s.totalSleepTimeSeconds) ||
+                numv(s.sleepDurationSeconds) || (core + awake);
     if (total <= 0) continue;
     var r3 = row(id3);
     if (!r3 || r3.sleep !== null) continue;   // primer registro del d&#237;a gana
     r3.sleep = sec2h(total);
-    if (deep + light + rem > 0) {
+    if (core > 0) {
       // El ligero se ajusta al residual para que las cuatro fases sumen exacto
       var dd = Math.round(deep / 360) / 10,
           rr = Math.round(rem  / 360) / 10,
@@ -2163,9 +2219,11 @@ function garminToRows(g){
       if (ll < 0) ll = 0;
       r3.stages = { deep:dd, light:ll, rem:rr, awake:aa };
     }
-    /* Respaldo de HRV: avgSleepHRV es la HRV que Garmin calcula de madrugada */
-    var hv = numv(s.avgSleepHRV);
+    /* Extras de madrugada: HRV y FC reposo tambi&#233;n vienen en `values` */
+    var hv = numv(s.avgSleepHRV) || numv(s.avgOvernightHrv) || numv(s.hrv);
     if (hv && !r3.hrv) r3.hrv = Math.round(hv);
+    var rh = numv(s.restingHeartRate);
+    if (rh && !r3.restingHR) r3.restingHR = Math.round(rh);
   }
 
   /* Carga → CTL/ATL */

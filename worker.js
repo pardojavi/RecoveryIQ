@@ -635,14 +635,30 @@ async function garminSync(body) {
     : Array.isArray(x) ? 'array(' + x.length + ')'
     : typeof x === 'object' ? (Object.keys(x).slice(0, 6).join(',') || 'objeto-vacío')
     : typeof x;
+  // Claves de la PRIMERA fila: así, si un campo cambia de nombre, el siguiente
+  // informe lo dice sin tener que volver a adivinar.
+  const rowKeysOf = (x) => {
+    if (!x || typeof x !== 'object') return '';
+    const r = Array.isArray(x.individualStats) ? x.individualStats[0]
+      : (x.dailySleepDTO || (x.calendarDate ? x : null));
+    if (!r || typeof r !== 'object') return '';
+    let k = Object.keys(r).filter(n => n !== 'values');
+    if (r.values && typeof r.values === 'object') {
+      k = k.concat(Object.keys(r.values).map(n => 'values.' + n));
+    }
+    const s = '{' + k.slice(0, 16).join(',') + '}';
+    return s.length > 170 ? s.slice(0, 167) + '…}' : s;
+  };
   const kindOfSleep = (x) => {
     if (x === null || x === undefined) return 'sin-cuerpo';
     if (Array.isArray(x)) return 'array(' + x.length + ')';
     if (typeof x !== 'object') return typeof x;
     const l = Array.isArray(x.individualStats) ? x.individualStats
       : Array.isArray(x.dailySleepData) ? x.dailySleepData : null;
-    if (l) return 'individualStats(' + l.length + ')';
-    if (x.dailySleepDTO) return 'dailySleepDTO';
+    if (l) return 'individualStats(' + l.length + ')' + rowKeysOf(x);
+    if (x.dailySleepDTO) return 'dailySleepDTO' + rowKeysOf(x);
+    const rk = rowKeysOf(x);
+    if (rk) return rk;
     const k = Object.keys(x);
     return k.slice(0, 6).join(',') || 'objeto-vacío';
   };
