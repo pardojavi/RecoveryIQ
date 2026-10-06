@@ -631,6 +631,30 @@ async function garminSync(body) {
     try { return await r.json(); } catch (e) { return fb; }
   };
 
+  const kindOf = (x) => x === null || x === undefined ? 'sin-cuerpo'
+    : Array.isArray(x) ? 'array(' + x.length + ')'
+    : typeof x === 'object' ? (Object.keys(x).slice(0, 6).join(',') || 'objeto-vacío')
+    : typeof x;
+  const kindOfSleep = (x) => {
+    if (x === null || x === undefined) return 'sin-cuerpo';
+    if (Array.isArray(x)) return 'array(' + x.length + ')';
+    if (typeof x !== 'object') return typeof x;
+    const l = Array.isArray(x.individualStats) ? x.individualStats
+      : Array.isArray(x.dailySleepData) ? x.dailySleepData : null;
+    if (l) return 'individualStats(' + l.length + ')';
+    if (x.dailySleepDTO) return 'dailySleepDTO';
+    const k = Object.keys(x);
+    return k.slice(0, 6).join(',') || 'objeto-vacío';
+  };
+  const rowsOfSleep = (x) => {
+    if (!x || typeof x !== 'object') return 0;
+    const l = Array.isArray(x.individualStats) ? x.individualStats
+      : Array.isArray(x.dailySleepData) ? x.dailySleepData : null;
+    if (l) return l.length;
+    if (x.dailySleepDTO) return 1;
+    return (x.calendarDate && (x.sleepTimeSeconds || x.deepSleepSeconds)) ? 1 : 0;
+  };
+
   // Se devuelven los JSON SIN tocar. Toda la interpretación de "cápsulas"
   // (array plano, {data:[…]}, {hrvData:[{hrvSummary:{…}}]}, trozos de sueño…)
   // vive en la app, que es donde está cubierta por los tests de normalización.
@@ -641,12 +665,37 @@ async function garminSync(body) {
   const sleep = [];
   for (let i = 0; i < sleepChunks.length; i++) sleep.push(await jsonOf(results[4 + i], null));
 
-  // Diagnóstico: qué devolvió cada endpoint. Si falta HRV o sueño, la app lo
-  // muestra en un toast para poder corregirlo sin adivinar.
-  const kindOf = (x) => x === null ? 'sin-cuerpo'
-    : Array.isArray(x) ? 'array(' + x.length + ')'
-    : typeof x === 'object' ? (Object.keys(x).slice(0, 6).join(',') || 'objeto-vacío')
-    : typeof x;
+  // Si el endpoint por rango no ha traído NI UN día de sueño, se reintenta con
+  // el endpoint de un solo día (el que usa python-garminconnect: get_sleep_data)
+  // para las últimas 2 semanas. Solo en ese caso, para no inflar peticiones.
+  let sleepRangeRows = 0;
+  for (const x of sleep) sleepRangeRows += rowsOfSleep(x);
+  const sleepDay = [];
+  if (sleepRangeRows === 0 && displayName) {
+    const days = [];
+    const first = new Date(start + 'T00:00:00Z');
+    let d = new Date(end + 'T00:00:00Z');
+    for (let i = 0; i < 14 && d >= first; i++) {
+      days.push(ymdUTC(d));
+      d = new Date(d.getTime() - 86400000);
+    }
+    const fb = await Promise.allSettled(days.map(dt =>
+      get('/sleep-service/sleep/' + encodeURIComponent(displayName) +
+          '?date=' + dt + '&nonSleepBufferMinutes=60')));
+    for (let i = 0; i < fb.length; i++) {
+      const part = fb[i];
+      if (part.status !== 'fulfilled') {
+        sleepDay.push({ d: days[i], s: 0, k: 'sin-red' });
+        continue;
+      }
+      const body = await jsonOf(part.value, null);
+      sleep.push(body);
+      sleepDay.push({ d: days[i], s: part.value.status, k: kindOfSleep(body) });
+    }
+  }
+
+  // Diagnóstico: qué devolvió cada endpoint. La app lo guarda y lo muestra en
+  // Ajustes, para poder corregirlo sin adivinar.
   const statusOf = (i) => (results[i] && results[i].status) || 0;
   const diag = {
     hrv:  { s: statusOf(0), k: kindOf(hrv) },
@@ -656,9 +705,11 @@ async function garminSync(body) {
     sleep: sleepChunks.map((c, i) => ({
       c: c[0].slice(5) + '/' + c[1].slice(5),
       s: statusOf(4 + i),
-      k: kindOf(sleep[i]),
+      k: kindOfSleep(sleep[i]),
     })),
+    sleepRangeRows,
   };
+  if (sleepDay.length) diag.sleepDay = sleepDay;
 
   return json({
     ok: true,

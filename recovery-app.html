@@ -1281,6 +1281,35 @@ button{border:0; background:none; cursor:pointer; padding:0;}
         </div>
       </div>
 
+      <!-- Diagn&#243;stico de la &#250;ltima sincronizaci&#243;n con Garmin -->
+      <div class="section-title" id="diag-title" style="display:none;">Diagn&#243;stico Garmin</div>
+      <div class="settings-card" id="diag-card" style="display:none;">
+        <div class="set-row">
+          <span class="k">Ventana</span>
+          <span class="v" id="diag-window">&#8212;</span>
+        </div>
+        <div class="set-row">
+          <span class="k">D&#237;as con dato</span>
+          <span class="v" id="diag-counts">&#8212;</span>
+        </div>
+        <div class="set-row">
+          <span class="k">HRV</span>
+          <span class="v" id="diag-hrv">&#8212;</span>
+        </div>
+        <div class="set-row">
+          <span class="k">Sue&#241;o</span>
+          <span class="v" id="diag-sleep">&#8212;</span>
+        </div>
+        <div class="set-row">
+          <span class="k">FC reposo</span>
+          <span class="v" id="diag-rhr">&#8212;</span>
+        </div>
+        <div class="set-row">
+          <span class="k">Actividades</span>
+          <span class="v" id="diag-acts">&#8212;</span>
+        </div>
+      </div>
+
       <div class="section-title">Info</div>
       <div class="settings-card">
         <div class="set-row">
@@ -1861,37 +1890,86 @@ function fetchGarminData(){
 
     var rows = garminToRows(r.data);
     if (!rows.length) throw new Error('NO_DATA_GARMIN');
-    var data = assembleData(rows, garminActivities(r.data));
+    var acts = garminActivities(r.data);
+    var data = assembleData(rows, acts);
     if (!data) throw new Error('NO_DATA_GARMIN');
     data.source = 'garmin';
-    var warn = garminWarn(r.diag, rows);
+
+    // Se guarda el diagn&#243;stico de ESTA sincronizaci&#243;n: Ajustes lo muestra
+    // y as&#237; no hay que adivinar qu&#233; devolvi&#243; cada endpoint de Garmin.
+    S.garmin.diag = garminDiag(r, rows, acts);
+    saveConfig();
+    var warn = garminWarn(S.garmin.diag);
     if (warn) setTimeout(function(){ showToast(warn); }, 900);
     return data;
   });
 }
 
-/* Aviso de diagn&#243;stico: si tras el sync falta HRV o sue&#241;o, decimos QU&#201;
-   devolvi&#243; cada endpoint (estado HTTP + claves de la respuesta) para poder
-   corregirlo sin adivinar. */
-function garminWarn(diag, rows){
-  if (!diag) return '';
-  var hasH = false, hasS = false, i;
+/* Resume la &#250;ltima sincronizaci&#243;n: cu&#225;ntos d&#237;as tra&#237;a cada se&#241;al
+   (y si HOY hay dato) + el estado HTTP y las claves de cada endpoint. */
+function sleepDiagCell(list, fallback){
+  var all = (list || []).concat(fallback || []);
+  if (!all.length) return { s: 0, k: 'sin peticiones' };
+  var counts = {}, keys = [], codes = [], i, k;
+  for (i = 0; i < all.length; i++) {
+    counts[all[i].s] = (counts[all[i].s] || 0) + 1;
+    if (all[i].k && keys.indexOf(all[i].k) < 0) keys.push(all[i].k);
+  }
+  for (k in counts) {
+    if (Object.prototype.hasOwnProperty.call(counts, k) && codes.indexOf(k) < 0) codes.push(k);
+  }
+  var txt = keys.length ? keys.join(' | ') : 'sin datos';
+  if (codes.length > 1) txt += ' (HTTP ' + codes.join('/') + ' ×' + all.length + ')';
+  return { s: all[0].s, k: txt };
+}
+
+function garminDiag(r, rows, acts){
+  var d = r.diag || null;
+  var today = ymd(new Date()), i;
+  var hrvDays = 0, sleepDays = 0, rhrDays = 0;
+  var tHrv = null, tSleep = null, tRhr = null;
   for (i = 0; i < rows.length; i++) {
-    if (rows[i].hrv) hasH = true;
-    if (rows[i].sleep !== null) hasS = true;
+    if (rows[i].hrv) hrvDays++;
+    if (rows[i].sleep !== null) sleepDays++;
+    if (rows[i].restingHR) rhrDays++;
+    if (rows[i].id === today) {
+      tHrv = rows[i].hrv; tSleep = rows[i].sleep; tRhr = rows[i].restingHR;
+    }
   }
-  if (hasH && hasS) return '';
+  return {
+    start: r.start || '', end: r.end || '',
+    days: rows.length,
+    hrvDays: hrvDays, sleepDays: sleepDays, rhrDays: rhrDays,
+    actsCount: (acts && acts.length) || 0,
+    todayHrv: tHrv, todaySleep: tSleep, todayRhr: tRhr,
+    hrv:  (d && d.hrv)  || null,
+    rhr:  (d && d.rhr)  || null,
+    load: (d && d.load) || null,
+    act:  (d && d.acts) || null,
+    sleep: sleepDiagCell(d && d.sleep, d && d.sleepDay)
+  };
+}
+
+function garminWarn(dg){
+  if (!dg) return '';
   var names = [], det = [];
-  if (!hasH && diag.hrv) {
-    names.push('HRV');
-    det.push(esc('HRV ' + diag.hrv.s) + (diag.hrv.k ? ' &middot; ' + esc(diag.hrv.k) : ''));
-  }
-  if (!hasS && diag.sleep && diag.sleep.length) {
+  if (!dg.sleepDays) {
     names.push('sue&#241;o');
-    det.push('sue&#241;o ' + esc(diag.sleep[0].s) +
-             (diag.sleep[0].k ? ' &middot; ' + esc(diag.sleep[0].k) : ''));
+    det.push('sue&#241;o ' + esc(String(dg.sleep ? dg.sleep.s : 0)) + ' &middot; ' +
+             esc(dg.sleep ? dg.sleep.k : 'sin datos'));
   }
-  if (!det.length) return '';
+  if (!dg.hrvDays) {
+    names.push('HRV');
+    det.push('HRV ' + esc(String(dg.hrv ? dg.hrv.s : 0)) +
+             (dg.hrv && dg.hrv.k ? ' &middot; ' + esc(dg.hrv.k) : ''));
+  }
+  if (!det.length) {
+    if (dg.todaySleep === null || dg.todaySleep === undefined) {
+      return '&#9888;&#65039; Garmin: hoy sin sue&#241;o a&#250;n (' +
+             esc(dg.sleepDays) + ' d&#237;as anteriores s&#237;)';
+    }
+    return '';
+  }
   return '&#9888;&#65039; Sin ' + names.join(' ni ') + ' de Garmin<br>' + det.join(' &middot; ');
 }
 
@@ -1957,6 +2035,24 @@ function garminDate(o){
 }
 
 function sec2h(secs){ return Math.round(secs / 360) / 10; } // segundos → horas (1 decimal)
+
+/* El d&#237;a al que pertenece una noche = la ma&#241;ana en que te despertaste.
+   Garmin pone en `calendarDate` la fecha de inicio de la noche en algunas
+   cuentas, y entonces la noche de ayer cae fuera de "hoy" en el panel: se
+   prefiere el timestamp de fin (ms; en `*Local` el valor le&#237;do en UTC ya es
+   la hora local) para atribuir siempre la noche al d&#237;a en que amaneciste. */
+function sleepDay(s){
+  if (!s || typeof s !== 'object') return '';
+  var t = s.sleepEndTimestampLocal || s.sleepEndTimestampGMT, d;
+  if (typeof t === 'string' && /^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  if (typeof t === 'string') t = parseFloat(t);
+  if (typeof t === 'number' && isFinite(t) && t > 0) {
+    if (t < 1e12) t = t * 1000;            // por si viniera en segundos
+    d = new Date(t);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  return '';
+}
 
 /* Carga diaria = suma del activityTrainingLoad de cada actividad.
    Barrido profundo: da igual qu&#233; c&#225;psula use el endpoint de cargas. */
@@ -2049,7 +2145,7 @@ function garminToRows(g){
     var rec = srec[i] || {};
     var s = (rec.dailySleepDTO && typeof rec.dailySleepDTO === 'object') ? rec.dailySleepDTO : rec;
     if (!s || typeof s !== 'object') continue;
-    var id3 = garminDate(s) || garminDate(rec);
+    var id3 = sleepDay(s) || garminDate(s) || garminDate(rec);
     if (!id3) continue;
     var deep  = numv(s.deepSleepSeconds), rem   = numv(s.remSleepSeconds),
         light = numv(s.lightSleepSeconds), awake = numv(s.awakeSleepSeconds);
@@ -2945,6 +3041,39 @@ function renderSettings(){
   if ($('display-log-count'))$('display-log-count').innerHTML = S.logs.length;
   if ($('display-score'))   $('display-score').innerHTML   = S.data ?
       (S.data.today.recoveryScore + ' &#183; ' + scoreLabel(S.data.today.recoveryScore)) : '&#8212;';
+
+  /* Panel de diagn&#243;stico de la &#250;ltima sincronizaci&#243;n con Garmin */
+  var dg = (S.source === 'garmin' && S.garmin && S.garmin.diag) ? S.garmin.diag : null;
+  if ($('diag-card')) {
+    $('diag-card').style.display = dg ? '' : 'none';
+    if ($('diag-title')) $('diag-title').style.display = dg ? '' : 'none';
+    if (dg) {
+      if ($('diag-window')) $('diag-window').innerHTML =
+        esc(dg.start || '') + ' &#8594; ' + esc(dg.end || '');
+      if ($('diag-counts')) $('diag-counts').innerHTML =
+        (dg.days || 0) + ' d&#237;as &#183; HRV ' + (dg.hrvDays || 0) +
+        ' &#183; sue&#241;o ' + (dg.sleepDays || 0) +
+        ' &#183; FC ' + (dg.rhrDays || 0);
+      if ($('diag-hrv')) $('diag-hrv').innerHTML = diagCell(dg.hrv) +
+        (dg.todayHrv ? ' &#183; hoy <b>' + dg.todayHrv + '</b>' : ' &#183; hoy sin dato');
+      if ($('diag-sleep')) $('diag-sleep').innerHTML = diagCell(dg.sleep) +
+        (dg.todaySleep !== null && dg.todaySleep !== undefined
+           ? ' &#183; hoy <b>' + esc(dg.todaySleep) + ' h</b>'
+           : ' &#183; hoy sin dato');
+      if ($('diag-rhr')) $('diag-rhr').innerHTML = diagCell(dg.rhr) +
+        (dg.todayRhr ? ' &#183; hoy <b>' + dg.todayRhr + '</b>' : ' &#183; hoy sin dato');
+      if ($('diag-acts')) $('diag-acts').innerHTML =
+        (dg.actsCount || 0) + ' &#183; ' + diagCell(dg.act);
+    }
+  }
+}
+
+function diagCell(e){
+  if (!e) return '&#8211;';
+  if (!e.s) return e.k ? esc(e.k) : 'sin respuesta';
+  var t = 'HTTP ' + esc(e.s);
+  if (e.k) t += ' &#183; ' + esc(e.k);
+  return t;
 }
 
 /* ---------- 15. CHAT IA ---------- */

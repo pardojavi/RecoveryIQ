@@ -194,14 +194,61 @@ w.__sh5 = { rhr: [{ calendarDate: dayKey(0), value: 49 }] };
 eq(run('garminToRows(window.__sh5)[0].restingHR'), 49, 'FC reposo en array plano');
 
 console.log('\n== Garmin: garminWarn() diagnostica qué endpoint falló ==');
-eq(run('garminWarn(null, [])'), '', 'sin diag → sin aviso');
-eq(run('garminWarn({hrv:{s:200,k:"array(60)"},sleep:[{s:200,k:"objeto-vacío"}]}, [{hrv:60,sleep:7.5}])'),
-   '', 'sin huecos → sin aviso');
-const wh = run('garminWarn({hrv:{s:200,k:"objeto-vacío"},sleep:[{s:404,s2:0,k:"sin-cuerpo"}]}, [{hrv:null,sleep:null}])');
-ok(wh.indexOf('HRV') >= 0 && wh.indexOf('sue') >= 0, 'avisa de HRV y sueño', wh);
-ok(wh.indexOf('200') >= 0 && wh.indexOf('404') >= 0, 'incluye los estados HTTP', wh);
-ok(wh.indexOf('Sin HRV ni sue') >= 0, 'cabezal del aviso', wh.slice(0, 60));
-ok(wh.indexOf('&middot;') >= 0, 'separador HTML correcto (no escapado)', wh);
+eq(run('garminWarn(null)'), '', 'sin diag → sin aviso');
+eq(run('garminWarn({sleepDays:60, hrvDays:60, todaySleep:7.5})'), '', 'todo presente → sin aviso');
+const wn = run('garminWarn({sleepDays:0, hrvDays:60, todaySleep:null,' +
+               ' hrv:{s:200,k:"array(60)"}, sleep:{s:404,k:"sin-cuerpo"}})');
+ok(wn.indexOf('sue') >= 0, 'avisa de que falta sueño', wn);
+ok(wn.indexOf('404') >= 0, 'incluye el estado HTTP', wn);
+ok(wn.indexOf('HRV') < 0, 'no avisa de HRV si ya hay datos', wn);
+const wt = run('garminWarn({sleepDays:59, hrvDays:60, todaySleep:null,' +
+               ' sleep:{s:200,k:"individualStats(59)"}})');
+ok(wt.indexOf('hoy sin sue') >= 0, 'días previos con sueño pero hoy no → aviso específico', wt);
+ok(wt.indexOf('59') >= 0, 'cuenta los días que sí hay', wt);
+
+console.log('\n== Garmin: la noche se atribuye al día en que amaneciste ==');
+const todayKey = dayKey(0), ystKey = dayKey(1);
+const tparts = todayKey.split('-');
+const wakeMs = Date.UTC(+tparts[0], +tparts[1] - 1, +tparts[2], 7, 12, 0);
+w.__sh6 = { sleep: [{ individualStats: [{
+  calendarDate: ystKey, sleepEndTimestampLocal: wakeMs, sleepTimeSeconds: 27000,
+  deepSleepSeconds: 5400, lightSleepSeconds: 12600,
+  remSleepSeconds: 7200, awakeSleepSeconds: 1800
+}] }] };
+const r6 = run('garminToRows(window.__sh6)');
+eq(r6.length, 1, 'una sola fila');
+eq(r6[0].id, todayKey, 'la noche de anoche cuenta para HOY, no para ayer');
+eq(r6[0].sleep, 7.5, 'y con su duración');
+w.__sh7 = { sleep: [{ individualStats: [{
+  calendarDate: ystKey, sleepEndTimestampLocal: Math.floor(wakeMs / 1000), sleepTimeSeconds: 27000,
+  deepSleepSeconds: 5400, lightSleepSeconds: 12600,
+  remSleepSeconds: 7200, awakeSleepSeconds: 1800
+}] }] };
+eq(run('garminToRows(window.__sh7)[0].id'), todayKey, 'timestamp en segundos también vale');
+w.__sh8 = { sleep: [{ individualStats: [{
+  calendarDate: todayKey, sleepTimeSeconds: 27000,
+  deepSleepSeconds: 5400, lightSleepSeconds: 12600,
+  remSleepSeconds: 7200, awakeSleepSeconds: 1800
+}] }] };
+eq(run('garminToRows(window.__sh8)[0].id'), todayKey, 'sin timestamp usa calendarDate');
+
+console.log('\n== Garmin: garminDiag() resume la sincronización ==');
+w.__dg = run('(function(){' +
+  'var r=garminToRows(window.__payload); var a=garminActivities(window.__payload);' +
+  'return garminDiag({start:"2026-08-01", end:"2026-09-30", diag:{' +
+  ' hrv:{s:200,k:"array(60)"}, rhr:{s:200,k:"allMetrics"},' +
+  ' acts:{s:200,k:"array(30)"}, load:{s:200,k:"array(30)"},' +
+  ' sleep:[{s:200,k:"individualStats(60)"}]}}, r, a);})()');
+eq(w.__dg.days, 60, '60 días con dato');
+eq(w.__dg.hrvDays, 60, '60 días con HRV');
+eq(w.__dg.sleepDays, 60, '60 días con sueño');
+eq(w.__dg.rhrDays, 60, '60 días con FC reposo');
+eq(w.__dg.todaySleep, 7.5, 'sueño de hoy');
+eq(w.__dg.todayHrv, 55, 'HRV de hoy');
+ok(String(w.__dg.sleep.k).indexOf('individualStats(60)') >= 0, 'claves del endpoint de sueño',
+   w.__dg.sleep.k);
+eq(w.__dg.sleep.s, 200, 'HTTP del endpoint de sueño');
+eq(run('sleepDiagCell(null, null).k'), 'sin peticiones', 'sin peticiones → aviso explícito');
 
 console.log('\n== UI: selector de fuente ==');
 run("pickSource('garmin')");
@@ -220,6 +267,25 @@ eq($('display-athlete').textContent, 'pardojavi', 'Atleta = displayName de Garmi
 run('S.source = "intervals"; S.athleteId = "i1234567"; renderSettings();');
 eq($('display-mode').textContent, 'Intervals.icu', 'Modo = Intervals.icu');
 eq($('display-athlete').textContent, 'i1234567', 'Athlete ID');
+
+console.log('\n== UI: panel de diagnóstico Garmin en Ajustes ==');
+eq($('diag-card').style.display, 'none', 'oculto si no hay diagnóstico');
+eq($('diag-title').style.display, 'none', 'título oculto si no hay diagnóstico');
+run('S.source = "garmin"; S.garmin = {refreshToken:"t", clientId:"c",' +
+    ' displayName:"pardojavi", diag:' + JSON.stringify(w.__dg) + '}; renderSettings();');
+eq($('diag-card').style.display, '', 'visible cuando hay diagnóstico');
+ok($('diag-window').textContent.indexOf('2026-08-01') >= 0,
+   'muestra la ventana sincronizada', $('diag-window').textContent);
+ok($('diag-counts').textContent.indexOf('60') >= 0,
+   'muestra los recuentos por señal', $('diag-counts').textContent);
+ok($('diag-sleep').innerHTML.indexOf('individualStats(60)') >= 0,
+   'muestra estado y claves del endpoint de sueño', $('diag-sleep').innerHTML);
+ok($('diag-sleep').innerHTML.indexOf('hoy <b>7.5 h</b>') >= 0,
+   'muestra el sueño de HOY', $('diag-sleep').innerHTML);
+ok($('diag-hrv').innerHTML.indexOf('hoy <b>55</b>') >= 0,
+   'muestra el HRV de HOY', $('diag-hrv').innerHTML);
+run('S.source = "intervals"; S.athleteId = "i1234567"; renderSettings();');
+eq($('diag-card').style.display, 'none', 'se oculta al volver a Intervals');
 
 console.log('\n== Errores amables con códigos de Garmin ==');
 [['BAD_CREDENTIALS', 'incorrectos'],
@@ -269,6 +335,10 @@ const sent = JSON.parse(lastFetch.opts.body);
 eq(sent.action, 'sync', 'acción sync');
 ok(/^\d{4}-\d{2}-\d{2}$/.test(sent.start) && /^\d{4}-\d{2}-\d{2}$/.test(sent.end),
    'rango de fechas válido', sent.start + ' → ' + sent.end);
+ok(run('!!(JSON.parse(localStorage.getItem("riq_config")).garmin || {}).diag'),
+   'el diagnóstico queda guardado en localStorage');
+eq(run('S.garmin.diag.days'), 45, 'diagnóstico con los 45 días sincronizados');
+eq(run('S.garmin.diag.sleepDays'), 45, '45 días con sueño');
 
 console.log('\n== Conexión Garmin (login) ==');
 run('S.source="intervals"; S.mfaState=""; S.mfaMethod="";');
