@@ -18,7 +18,8 @@ recomendaciones diarias.
 | `proxy.php` | Proxy servidor-a-servidor para la API de Intervals.icu (evita CORS) |
 | `proxy-ai.php` | Proxy para la API de Claude/Anthropic (chat IA) |
 | `proxy-ai-config.example.php` | Plantilla: cópiala a `proxy-ai-config.php` y pon ahí tu key |
-| `worker.js` + `wrangler.toml` | Alternativa sin PHP (Cloudflare Workers) para GitHub Pages |
+| `worker.js` + `wrangler.toml` | Alternativa sin PHP (Cloudflare Workers): proxy de Intervals.icu, conexión con Garmin Connect (§4.5) e IA |
+| `tests/` | Suites de jsdom: `test-smoke.mjs` y `test-garmin.mjs` (§9) |
 | `apple-touch-icon.png` | Icono 180×180 que muestra iOS al añadir a pantalla de inicio |
 | `.gitignore` | Impide subir `.DS_Store` y las API keys a GitHub |
 
@@ -36,6 +37,7 @@ No hay build, ni npm, ni framework: se sube tal cual.
 | Modo demo | ✅ Sí |
 | Instalar como PWA en el iPhone | ✅ Sí |
 | Conectar con tu cuenta de **Intervals.icu** | ✅ Sí, vía `worker.js` |
+| Conectar con tu cuenta de **Garmin Connect** | ✅ Sí, vía `worker.js` (§4.5) |
 | Chat con **IA** | ✅ Sí, **gratis** con Workers AI (§4.4) |
 
 **Esta app ya está desplegada**: `MY_PROXY` apunta a
@@ -66,7 +68,14 @@ partir de `worker.js` de este repo.
 
 ---
 
-## 3. Conectar tu cuenta de Intervals.icu
+## 3. Conectar tus datos
+
+La app tiene **dos vías de obtención de información**: Intervals.icu y Garmin
+Connect. Eliges una en la pantalla de inicio (las pestañas de arriba) y puedes
+cambiar de una a otra cuando quieras haciendo **Cerrar sesión** y volviendo a
+conectar.
+
+### 3.1 Intervals.icu
 
 1. En Intervals.icu: **Perfil → Configuración → API** y copia la **API key**.
 2. Tu **Athlete ID** empieza siempre por `i` (ej: `i1234567`).
@@ -74,6 +83,18 @@ partir de `worker.js` de este repo.
 
 La app descarga **60 días** de `wellness` y `activities`, calcula las medias de
 referencia y renderiza el dashboard.
+
+### 3.2 Garmin Connect
+
+1. En la app: pestaña **Garmin Connect** → email y contraseña de tu cuenta Garmin
+   → **Conectar con Garmin**.
+2. Si tu cuenta tiene verificación en dos pasos, la app te pide el **código de 6
+   dígitos** y lo introducirá en el mismo sitio.
+3. Descarga los últimos 60 días y ya está.
+
+Requiere que `worker.js` esté desplegado (§4.3), porque el login de Garmin se
+hace en servidor: no puede hacerse desde el navegador. Ver **§4.5** para qué da
+y qué no da esta vía.
 
 ¿Aún no quieres conectar? Botón **«Probar con datos demo»**: 28 días de datos
 de ejemplo (HRV 64 ms, FC 52 bpm, sueño 7,5 h, TSB −4, índice **78/100**).
@@ -210,6 +231,123 @@ pasas a usar Claude sin modificar nada más.
 
 ---
 
+### 4.5 Segunda vía: Garmin Connect (la que implementa la app)
+
+Recupera del sitio de desarrolladores de Garmin que hay **dos programas
+distintos**:
+
+| Programa | ¿Quién entra? | ¿Da datos de salud? |
+|---|---|---|
+| **Connect IQ** (caras de reloj, apps de tienda) | Cualquiera, abierto | ❌ No |
+| **Garmin Connect Developer Program** (*Health API*) | Empresas, con solicitud (§4.6) | ✅ Sí, pero hay que esperar |
+
+RecoveryIQ añade **una tercera opción pragmática**: la misma vía de acceso que
+usa la app oficial de Garmin Connect en el móvil, reproducida en `worker.js`.
+Funciona hoy con tu cuenta personal y sin esperar a nadie.
+
+**Flujo de autenticación** (idéntico al de la app oficial):
+
+```
+POST sso.garmin.com/mobile/api/login          → serviceTicketId
+POST diauth.garmin.com/…/oauth/token          → access + refresh token
+GET  connectapi.garmin.com/…                  → datos
+```
+
+Si tu cuenta tiene verificación en dos pasos, la app recibe `MFA_REQUIRED`, te
+pide el código de 6 dígitos y lo manda con `POST sso.garmin.com/mobile/api/mfa/verifyCode`.
+
+**Datos que recupera y qué le aporta a RecoveryIQ:**
+
+| Dato | Endpoint | ¿Intervals.icu lo da? |
+|---|---|---|
+| HRV nocturno | `/hrv-service/hrv/daily/{ini}/{fin}` | ✅ |
+| FC en reposo | `/userstats-service/wellness/daily/…?metricId=60` | ✅ |
+| Sueño total | `/sleep-service/stats/sleep/daily/{a}/{b}` | ✅ |
+| **Fases: profundo · ligero · REM · despierto** | ídem (`deepSleepSeconds`, `remSleepSeconds`…) | ❌ **Solo Garmin** |
+| Carga de entrenamiento por actividad | `/fitnessstats-service/activity/all?metric=activityTrainingLoad` | ✅ |
+| Actividades recientes | `/activitylist-service/activities/search/activities` | ✅ |
+
+**Son 8 peticiones por sincronización** (perfil, HRV por rango, FC reposo por
+rango, carga, actividades y 3 trozos de sueño de 28 días — ese endpoint tiene
+límite de 28 días). El límite del plan Free de Workers son 50 subpeticiones por
+invocación, así que hay margen de sobra.
+
+**CTL / ATL / TSB.** Garmin no expone CTL/ATL como tal, así que se calculan en
+`garminToRows()` con **el mismo modelo de Banister que usa Intervals.icu**:
+
+```
+CTL = media móvil exponencial de la carga con constante 42 días
+ATL = lo mismo con constante 7 días
+TSB = CTL − ATL
+```
+
+Se siembra EMA con la media del propio rango para no arrancar desde 0. Si la
+cuenta no devuelve `activityTrainingLoad` (sin entrenos aún), CTL/ATL quedan en
+0 y el indicador de forma del Informe lo reflejará.
+
+**Con Garmin, la hoja de detalle del sueño muestra fases reales** en lugar del
+reparto estimado (§6): las cuatro barras pasan de «estimación» a «informado
+por tu dispositivo».
+
+**Riesgos, límites y coste** — esto hay que leerlo antes de conectar:
+
+- **No oficial.** No está respaldada por Garmin. Si cambian un endpoint deja de
+  funcionar; es lo que le pasa continuamente a `python-garminconnect`
+  (3.100 ★), que se actualiza a menudo.
+- **Uso personal.** No la montes para un servicio con usuarios propios; para
+  eso está la vía oficial (§4.6).
+- **El `refresh_token` da acceso a tu cuenta Garmin.** Vive en el
+  `localStorage` del dispositivo (el mismo sitio donde ya está tu API key de
+  Intervals.icu) y se borra con **Cerrar sesión**. Si crees que se filtró,
+  cambia la contraseña de Garmin Connect: eso revoca los tokens.
+- **Tu contraseña no se guarda**: se usa una sola vez para obtener el token.
+- **Rate limit / anti-bots.** Si Garmin bloquea el intento, el worker responde
+  `RATE_LIMIT` o `CAPTCHA`. Solución: entra una vez a mano en
+  `connect.garmin.com` desde tu navegador y reintenta unos minutos después,
+  desde otra red si puedes.
+- **Coste: 0 €.** No hay intermediario ni cuota: son llamadas a la API de
+  Garmin. Y la sincronización no consume neurons de Workers AI (eso solo lo usa
+  el chat).
+
+---
+
+### 4.6 Vía oficial: Garmin Health API (por si te aprueban)
+
+Si prefieres la vía legal y estable, o si algún día tu proyecto es un negocio,
+esto es lo que hay que hacer. **Se puede pedir en paralelo**: es gratis, no
+compite con lo anterior y la respuesta llega en dos días.
+
+1. Documentación: <https://developer.garmin.com/gc-developer-program/health-api/>
+   y FAQ del programa: <https://developer.garmin.com/gc-developer-program/program-faq/>
+2. Solicitud: rellena el formulario de *wellness partner*
+   <https://www.garmin.com/forms/wellnesspartner/> (o el botón **REQUEST**
+   desde la página del programa).
+3. Garmin confirma el estado **en 2 días hábiles** e invita a una *integration
+   call*. Después te dan un entorno de evaluación; una integración típica
+   tarda **1 a 4 semanas**.
+4. Es **OAuth 2.0 de servidor a servidor** con consentimiento del usuario final
+   (el usuario aprueba la conexión en una página de Garmin), y Garmin *empuja*
+   los datos a tu endpoint por webhook.
+
+Condiciones oficiales, literales:
+
+| | |
+|---|---|
+| Coste de licencia | *"There are no licensing or maintenance fees"* |
+| Destinatario | *"…but it is **only for business use**"* / *"available for **enterprise use**"* |
+| Datos | Sueño (con fases), FC, estrés, Body Battery, SpO2, pasos, actividad |
+
+> No confundas de nuevo: solicitar **Connect IQ** no te da acceso a estos datos.
+> La FAQ del programa lo dice: *"One does not require the use of the other."*
+
+**Si te aprueban, no hay que rehacer la app.** El contrato interno ya está
+aislado: `garminToRows(g)` recibe un objeto con `hrv`, `rhr`, `sleep`, `load` y
+`activities` y devuelve las `rows` que consume `assembleData()`. Bastaría con
+cambiar `garminSync()` del worker (o añadir un `action: 'sync_official'` con el
+token OAuth 2.0) para que la app ni se entere.
+
+---
+
 ## 5. ⚠️ Seguridad — léelo
 
 `proxy.php` recibe la API key de Intervals.icu en la **query string**
@@ -229,6 +367,12 @@ Recomendaciones:
   como proxy abierto.
 - Las credenciales del atleta se guardan en `localStorage` del propio dispositivo
   y se borran con **Cerrar sesión**.
+- **Garmin (§4.5)**: la contraseña **no se guarda** en ningún sitio; se usa una
+  sola vez en el worker para obtener el `refresh_token`, y ese token es lo que
+  se persiste en `localStorage`. Si lo pierdes, cambia la contraseña de Garmin
+  Connect para revocarlo. La ruta `/garmin` del worker solo acepta tres
+  acciones (`login`, `mfa`, `sync`) y valida el formato de fechas, así que no
+  es un proxy abierto.
 - Si usas Cloudflare Workers, protege la ruta `/ai` si no quieres que alguien
   gaste tus tokens: añade un `if (!request.headers.get('X-RecoveryIQ')) ...`
   o activa *Cloudflare Access*.
@@ -246,7 +390,14 @@ Cinco pestañas en la barra inferior + Ajustes (desde el ⚙️ de arriba):
 | 🏁 **Informe** | Veredicto (🟢🟡🟠🔴), barras HRV/sueño/global, **estado de forma y rendimiento** (índice 0–100, CTL/ATL/TSB, ratio, narrativa), recomendaciones por rango |
 | 🤖 **IA** | Chat con Claude, 5 preguntas rápidas, system prompt con tus datos del día (incluidas las fases del sueño) |
 | 📝 **Registrar** | Cansancio, ánimo, estrés, calidad de sueño, molestias, salud, notas |
-| ⚙️ **Ajustes** | Athlete ID, sincronizar, nº de registros, versión, cerrar sesión |
+| ⚙️ **Ajustes** | Fuente activa (Intervals.icu / Garmin), sincronizar, nº de registros, versión, cerrar sesión |
+
+#### Fuente de datos
+
+La pantalla de conexión tiene un selector con las **dos vías**: `Intervals.icu`
+y `Garmin Connect` (§4.5). Solo se persiste la sesión cuando la fuente acepta
+las credenciales. Para cambiar de fuente: **Ajustes → Cerrar sesión** y
+conectar con la otra. Ajustes muestra siempre cuál está activa.
 
 #### Detalle del sueño
 
@@ -263,6 +414,11 @@ Por eso la app:
 2. Si no → las **estima** con el reparto típico del adulto (algo peor cuanto menos
    se duerme) y lo dice explícitamente en la hoja, para que nadie lo confunda
    con un dato real.
+
+> **Garmin Connect sí las trae**: `deepSleepSeconds`, `lightSleepSeconds`,
+> `remSleepSeconds` y `awakeSleepSeconds` del endpoint de sueño. Con esa fuente
+> la hoja muestra siempre **fases reales** (caso 1), nunca la estimación. Es la
+> razón principal por la que merece la pena tener las dos vías.
 
 Además, todas las horas de sueño se muestran con **máximo 1 decimal y sin el `.0`
 sobrante** (`fmtSleep()`): `7.483333333333333` → `7.5`.
@@ -287,11 +443,13 @@ Resultado recortado a 0–100 y redondeado. Colores: **≥80 verde** (Excelente)
 
 | Clave `localStorage` | Contenido |
 |---|---|
-| `riq_config` | `{athleteId, apiKey}` — restaura la sesión al abrir |
+| `riq_config` | Intervals: `{source:'intervals', athleteId, apiKey}` · Garmin: `{source:'garmin', garmin:{refreshToken, clientId, displayName}}` — restaura la sesión al abrir |
 | `riq_logs` | Registros subjetivos (máx. **180**, se eliminan los más antiguos) |
 
 Al abrir con sesión guardada se muestra *«Restaurando sesión…»*. Si la
-restauración falla, se borra la config y se deja el formulario limpio.
+restauración falla, se borra la config y se deja el formulario limpio. Excepción:
+si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
+— solo hay que volver a conectar.
 
 ---
 
@@ -316,22 +474,52 @@ restauración falla, se borra la config y se deja el formulario limpio.
 
 ## 9. Verificación
 
-Ejecutada con jsdom sobre `recovery-app.html` (95 aserciones, 0 fallos,
-0 errores en tiempo de ejecución):
+Dos suites de jsdom sobre `recovery-app.html` (**224 aserciones, 0 fallos**,
+0 errores en tiempo de ejecución). Están en `tests/` (`npm install` y
+`node test-smoke.mjs` / `node test-garmin.mjs`).
+
+### `test-smoke.mjs` — 124 aserciones
 
 - Arranque, modo demo, credenciales y auto-restauración de sesión.
 - Valores exactos de los datos demo de la spec (78/100, HRV 64, baseline 58,
-  +10,3 %, FC 52/55, −5,5 %, sueño 7,5 h, +1 h, TSB −4, 28 días).
-- Render del dashboard, pills sin unidades duplicadas, semana y métricas.
-- Navegación por pestañas, calendario (23 días con datos en septiembre),
-  detalle de día, informe (78 → 🟡 PUEDE ENTRENAR).
+  +10,3 %, FC 52/55, −5,5 %, sueño 7,5 h, +1 h, CTL 68, ATL 72, TSB −4, 28 días).
+- Render del dashboard (círculo, 4 tarjetas, semana, conclusiones).
+- Navegación por las 5 pestañas + Ajustes (un solo tab activo a la vez).
+- Calendario: recuento exacto de días con datos del mes, navegación entre meses
+  y detalle de día (con `scrollIntoView` protegido).
+- Informe: veredicto 78 → 🟡 PUEDE ENTRENAR y la sección **Estado de forma y
+  rendimiento** (índice 86, «En gran forma», CTL 68, ATL 72, TSB −4, ratio
+  `0.94` con 2 decimales, 6 estadísticas y recomendaciones).
 - Formulario de registro: selección, exclusividad de «Ninguno», guardado en
-  `localStorage`, reset e historial.
+  `localStorage` (con el score del día), reset e historial.
 - Chat IA: `MY_AI_PROXY = null` → mensaje de configuración; con proxy → payload
-  correcto (`claude-sonnet-4-20250514`, `max_tokens: 600`, system prompt en texto
-  plano) e historial saneado para Anthropic.
-- Integración con la API real: normalización de `sleepSecs`/`sleep`, cálculo de
-  TSB, límites de `calcScore` y umbrales de `scoreColor`/`scoreLabel`.
+  correcto (`claude-sonnet-4-20250514`, `max_tokens: 600`, system prompt en
+  texto plano con los datos del día), historial limitado a 10 y saneado para
+  Anthropic (nunca empieza por `assistant`).
+- Límites de `calcScore` (0–100), umbrales de `scoreColor`/`scoreLabel`/
+  `verdictFor` y normalización `sleepSecs`/`sleep`.
+
+### `test-garmin.mjs` — 100 aserciones
+
+- **Normalizador `garminToRows()`**: 60 filas, HRV, FC en reposo, sueño en horas
+  con 1 decimal, y las 4 fases reales sumando exactamente el total.
+- Redondeo de horas (`sec2h`), `garminFitness()` (EMA 42/7 con semilla en la
+  media: carga constante 100 → CTL/ATL 100).
+- `assembleData()` con filas de Garmin: fases **no estimadas**, TSB = CTL − ATL,
+  y una cuenta sin `activityTrainingLoad` no rompe (CTL/ATL en 0).
+- Datos basura (`null`, `{}`, campos ausentes) no lanzan excepción.
+- UI: selector de fuente, Ajustes reflejando «Garmin Connect» y el
+  `displayName`, y la hoja de detalle del sueño diciendo «informado por tu
+  dispositivo» en lugar de «estimación».
+- Errores amables por código (`BAD_CREDENTIALS`, `RATE_LIMIT`, `CAPTCHA`,
+  `BLOCKED`, `REFRESH_FAILED`, `TOKEN_EXCHANGE`, `NO_DATA_GARMIN`).
+- `fetchGarminData()` contra el worker con *stub*: rotación del `refresh_token`
+  en memoria y en `riq_config`, y POST con rango de fechas válido.
+- Conexión completa: login, ida y vuelta de **MFA** (sin mandar la contraseña en
+  el segundo paso) y cierre de sesión.
+- `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
+
+Además, `node --check` sobre el bloque `<script>` del HTML y sobre `worker.js`.
 
 ---
 

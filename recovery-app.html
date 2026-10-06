@@ -244,6 +244,31 @@ button{border:0; background:none; cursor:pointer; padding:0;}
   border-radius:16px;
 }
 .btn-demo:active{background:rgba(167,139,250,.1); transform:scale(.97);}
+
+/* Selector de fuente de datos (Intervals.icu / Garmin Connect) */
+.src-switch{
+  display:flex;
+  gap:8px;
+  margin-top:4px;
+}
+.src-opt{
+  flex:1;
+  min-height:46px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,.03);
+  color:var(--text2);
+  font-size:14px;
+  font-weight:600;
+  border-radius:14px;
+  transition:transform .15s ease, background .15s ease, border-color .15s ease;
+}
+.src-opt.active{
+  background:rgba(167,139,250,.14);
+  border-color:rgba(167,139,250,.55);
+  color:var(--accent2);
+}
+.src-opt:active{transform:scale(.97);}
+
 .setup-note{
   margin-top:26px;
   font-size:12px;
@@ -994,26 +1019,66 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 
     <div class="setup-card">
       <div class="field">
-        <label class="field-label" for="inp-athlete">Athlete ID</label>
-        <input class="input" id="inp-athlete" type="text" autocapitalize="none"
-               autocorrect="off" spellcheck="false" placeholder="Ej: i1234567">
-        <div class="hint">Intervals.icu → Perfil → Configuración → API</div>
+        <span class="field-label">Fuente de datos</span>
+        <div class="src-switch" id="src-switch">
+          <button type="button" class="src-opt active" data-src="intervals">Intervals.icu</button>
+          <button type="button" class="src-opt" data-src="garmin">Garmin Connect</button>
+        </div>
+        <div class="hint">Dos v&#237;as de obtenci&#243;n de datos. Puedes cambiarlas cuando quieras.</div>
       </div>
 
-      <div class="field">
-        <label class="field-label" for="inp-key">API Key</label>
-        <input class="input" id="inp-key" type="password" autocapitalize="none"
-               autocorrect="off" spellcheck="false" placeholder="Tu API key de Intervals.icu">
+      <div id="form-intervals">
+        <div class="field">
+          <label class="field-label" for="inp-athlete">Athlete ID</label>
+          <input class="input" id="inp-athlete" type="text" autocapitalize="none"
+                 autocorrect="off" spellcheck="false" placeholder="Ej: i1234567">
+          <div class="hint">Intervals.icu → Perfil → Configuración → API</div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="inp-key">API Key</label>
+          <input class="input" id="inp-key" type="password" autocapitalize="none"
+                 autocorrect="off" spellcheck="false" placeholder="Tu API key de Intervals.icu">
+        </div>
+
+        <button class="btn-primary" id="btn-connect">Conectar y Continuar</button>
       </div>
 
-      <button class="btn-primary" id="btn-connect">Conectar y Continuar</button>
+      <div id="form-garmin" style="display:none">
+        <div class="field">
+          <label class="field-label" for="inp-g-email">Email de Garmin</label>
+          <input class="input" id="inp-g-email" type="email" autocapitalize="none"
+                 autocorrect="off" spellcheck="false" placeholder="tu@email.com">
+          <div class="hint">La misma cuenta que usas en la app Garmin Connect</div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="inp-g-pass">Contraseña</label>
+          <input class="input" id="inp-g-pass" type="password" autocapitalize="none"
+                 autocorrect="off" spellcheck="false" placeholder="Tu contraseña de Garmin">
+        </div>
+
+        <div class="field" id="field-g-mfa" style="display:none">
+          <label class="field-label" for="inp-g-mfa">Código de verificación</label>
+          <input class="input" id="inp-g-mfa" type="text" inputmode="numeric" maxlength="6"
+                 autocomplete="one-time-code" placeholder="6 dígitos">
+          <div class="hint" id="hint-g-mfa">Te han enviado un código a tu m&#233;todo habitual.</div>
+        </div>
+
+        <button class="btn-primary" id="btn-garmin">Conectar con Garmin</button>
+
+        <div class="hint" style="text-align:center; margin-top:12px; line-height:1.55;">
+          V&#237;a no oficial: usa el mismo flujo de acceso que la app oficial de Garmin Connect.
+          Tu contrase&#241;a no se guarda; solo se conserva un token en este dispositivo.
+        </div>
+      </div>
     </div>
 
     <button class="btn-demo" id="btn-demo">Probar con datos demo</button>
 
     <div class="setup-note">
       Tus credenciales se guardan solo en este dispositivo (localStorage).<br>
-      Se usan para hablar con la API de Intervals.icu a través de tu proxy.
+      Se usan para hablar con Intervals.icu o Garmin Connect a trav&#233;s de tu proxy.
     </div>
   </div>
 </div>
@@ -1301,6 +1366,11 @@ var APP_VERSION  = '3.0.0';
 var S = {
   athleteId:   '',
   apiKey:      '',
+  source:      'intervals',      // 'intervals' | 'garmin'
+  garmin:      { refreshToken:'', clientId:'', displayName:'' },
+  mfaState:    '',
+  mfaMethod:   '',
+  pickSource:  'intervals',      // fuente elegida en la pantalla de setup
   isDemo:      false,
   data:        null,
   logs:        [],
@@ -1457,6 +1527,16 @@ function safeSet(k, v){
 
 function safeDel(k){
   try { localStorage.removeItem(k); } catch(e){}
+}
+
+/* Persiste la configuraci&#243;n vigente (fuente activa incluida) */
+function saveConfig(){
+  if (S.source === 'garmin') {
+    safeSet('riq_config', { source:'garmin', athleteId: S.athleteId || '', apiKey: '',
+                            garmin: S.garmin });
+  } else {
+    safeSet('riq_config', { source:'intervals', athleteId: S.athleteId, apiKey: S.apiKey });
+  }
 }
 
 /* ---------- 4. SCORE ---------- */
@@ -1716,6 +1796,8 @@ function apiFetch(url, authHeader){
 }
 
 function fetchData(){
+  if (S.source === 'garmin') return fetchGarminData();
+
   var authHeader = 'Basic ' + btoa('API_KEY:' + S.apiKey);
   var oldest = ymd(shiftDays(new Date(), -60));
   var newest = ymd(new Date());
@@ -1731,6 +1813,254 @@ function fetchData(){
       if (!data) throw new Error('NO_DATA');
       return data;
     });
+}
+
+/* ---------- 7b. GARMIN CONNECT — 2&#186; v&#237;a de obtenci&#243;n de datos ----------
+   Ver README §4.5/§4.6. El worker hace el login/refresh de Garmin y devuelve
+   datos en bruto; aquí se convierten en las "rows" que ya entiende assembleData,
+   de modo que todo lo demás (score, calendario, informe, IA) funciona igual. */
+
+function garminPost(payload){
+  if (!MY_PROXY || MY_PROXY.indexOf('AQUI_TU_DOMINIO') >= 0) {
+    return Promise.reject(new Error('Sin proxy: despliega worker.js en Cloudflare Workers para usar Garmin Connect.'));
+  }
+  return fetch(MY_PROXY + '/garmin', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+    cache:   'no-store'
+  }).then(function(res){
+    return res.json().catch(function(){ return {}; }).then(function(j){
+      if (!res.ok || !j || j.ok === false) {
+        var e = new Error((j && j.error) ? j.error : ('Garmin devolvi&#243; HTTP ' + res.status + '.'));
+        e.gCode = (j && j.code) || '';
+        if (j && j.code === 'MFA_REQUIRED') e.mfa = j;
+        throw e;
+      }
+      return j;
+    });
+  });
+}
+
+function fetchGarminData(){
+  var end   = ymd(new Date());
+  var start = ymd(shiftDays(new Date(), -60));
+
+  return garminPost({
+    action:      'sync',
+    refreshToken: S.garmin.refreshToken,
+    clientId:     S.garmin.clientId,
+    displayName:  S.garmin.displayName || '',
+    start:        start,
+    end:          end
+  }).then(function(r){
+    if (r.refreshToken) S.garmin.refreshToken = r.refreshToken;
+    if (r.clientId)     S.garmin.clientId     = r.clientId;
+    if (r.displayName)  S.garmin.displayName  = r.displayName;
+    saveConfig();
+
+    var rows = garminToRows(r.data);
+    if (!rows.length) throw new Error('NO_DATA_GARMIN');
+    var data = assembleData(rows, garminActivities(r.data));
+    if (!data) throw new Error('NO_DATA_GARMIN');
+    data.source = 'garmin';
+    return data;
+  });
+}
+
+/* --- utilidades de normalizaci&#243;n ------------------------------------ */
+function numv(v){
+  var n = parseFloat(v);
+  return (isFinite(n) && n > 0) ? n : 0;
+}
+
+function asList(x, keys){
+  if (!x) return [];
+  if (Object.prototype.toString.call(x) === '[object Array]') return x;
+  for (var i = 0; i < keys.length; i++) {
+    if (Object.prototype.toString.call(x[keys[i]]) === '[object Array]') return x[keys[i]];
+  }
+  return [];
+}
+
+function garminDate(o){
+  if (!o || typeof o !== 'object') return '';
+  var keys = ['calendarDate','date','startDate','startDateLocal','startLocal',
+              'startTimeLocal','startGMT','startTimeGMT'];
+  var i, s;
+  for (i = 0; i < keys.length; i++) {
+    s = o[keys[i]];
+    if (typeof s === 'string' && s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s)) {
+      return s.slice(0, 10);
+    }
+  }
+  // Por si Garmin cambia el nombre del campo: buscamos cualquier fecha ISO
+  // en los valores del objeto (ignorando los que no pueden ser el d&#237;a).
+  for (var k in o) {
+    if (!o.hasOwnProperty(k) || /birth|create|update|modified|end/i.test(k)) continue;
+    s = o[k];
+    if (typeof s === 'string' && s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s)) {
+      return s.slice(0, 10);
+    }
+  }
+  return '';
+}
+
+function sec2h(secs){ return Math.round(secs / 360) / 10; } // segundos → horas (1 decimal)
+
+/* Carga diaria = suma del activityTrainingLoad de cada actividad */
+function garminLoadMap(g){
+  var src = asList(g && g.load, ['activities','data','items','metrics']);
+  if (!src.length) src = asList(g && g.activities, ['activities','data','items']);
+  var map = {}, has = false;
+  for (var i = 0; i < src.length; i++) {
+    var a = src[i];
+    if (!a || typeof a !== 'object') continue;
+    var id = garminDate(a);
+    if (!id) continue;
+    var v = numv(a.activityTrainingLoad || a.trainingLoad || a.load || a.tss);
+    map[id] = (map[id] || 0) + v;
+    if (v > 0) has = true;
+  }
+  return { map: map, has: has };
+}
+
+/* Modelo de Banister, igual que Intervals.icu: CTL = EMA 42 d, ATL = EMA 7 d.
+   Se siembra con la media del propio rango para no arrancar desde 0. */
+function garminFitness(start, end, loadMap){
+  var ids = [], d = parseYmd(start), last = parseYmd(end), guard = 0;
+  if (!d || !last) return {};
+  while (d <= last && guard++ < 400) { ids.push(ymd(d)); d = shiftDays(d, 1); }
+  if (!ids.length) return {};
+
+  var i, sum = 0;
+  for (i = 0; i < ids.length; i++) sum += (loadMap[ids[i]] || 0);
+  var ctl = sum / ids.length, atl = ctl, out = {};
+
+  for (i = 0; i < ids.length; i++) {
+    var v = loadMap[ids[i]] || 0;
+    ctl = ctl + (v - ctl) / 42;
+    atl = atl + (v - atl) / 7;
+    out[ids[i]] = { ctl: Math.round(ctl * 10) / 10, atl: Math.round(atl * 10) / 10 };
+  }
+  return out;
+}
+
+/* Garmins → rows: {id, hrv, restingHR, sleep(h), stages(h), ctl, atl} */
+function garminToRows(g){
+  if (!g) return [];
+  var rows = {}, ids = [], i;
+
+  function row(id){
+    if (!id) return null;
+    if (!rows[id]) {
+      rows[id] = { id:id, hrv:null, restingHR:null, sleep:null, stages:null, ctl:0, atl:0 };
+      ids.push(id);
+    }
+    return rows[id];
+  }
+
+  /* HRV (el endpoint /hrv-service/hrv/daily/a/b trae adem&#225;s el baseline) */
+  var hrv = asList(g.hrv, ['hrvData','data','items']);
+  for (i = 0; i < hrv.length; i++) {
+    var h = hrv[i] && (hrv[i].hrvSummary || hrv[i]);
+    if (!h || typeof h !== 'object') continue;
+    var id1 = garminDate(h);
+    var v1  = numv(h.lastNightAvg || h.weeklyAvg || h.hrv || h.value);
+    if (id1 && v1) { var r1 = row(id1); if (r1) r1.hrv = Math.round(v1); }
+  }
+
+  /* FC en reposo (metricsMap.WELLNESS_RESTING_HEART_RATE) */
+  var mm = (g.rhr && g.rhr.allMetrics && g.rhr.allMetrics.metricsMap) || {};
+  var rl = mm.WELLNESS_RESTING_HEART_RATE || mm.RESTING_HEART_RATE || null;
+  if (Object.prototype.toString.call(rl) !== '[object Array]') rl = asList(g.rhr, ['data','items']);
+  for (i = 0; i < rl.length; i++) {
+    var it = rl[i] || {};
+    var id2 = garminDate(it);
+    var v2  = numv(it.value !== undefined ? it.value
+                : (it.metricValue !== undefined ? it.metricValue : it.restingHeartRate));
+    if (id2 && v2) { var r2 = row(id2); if (r2) r2.restingHR = Math.round(v2); }
+  }
+
+  /* Sue&#241;o + fases REALES (Garmin s&#237; las informa: Intervals.icu, no) */
+  var sl = asList(g.sleep, ['individualStats','dailySleepData','data','items']);
+  for (i = 0; i < sl.length; i++) {
+    var s = sl[i] && (sl[i].dailySleepDTO || sl[i]);
+    var id3 = garminDate(s);
+    if (!id3) continue;
+    var deep  = numv(s.deepSleepSeconds), rem   = numv(s.remSleepSeconds),
+        light = numv(s.lightSleepSeconds), awake = numv(s.awakeSleepSeconds);
+    var total = numv(s.sleepTimeSeconds) || numv(s.totalSleepSeconds) || (deep + light + rem + awake);
+    if (total <= 0) continue;
+    var r3 = row(id3);
+    if (!r3) continue;
+    r3.sleep = sec2h(total);
+    if (deep + light + rem > 0) {
+      // El ligero se ajusta al residual para que las cuatro fases sumen exacto
+      var dd = Math.round(deep / 360) / 10,
+          rr = Math.round(rem  / 360) / 10,
+          aa = Math.round(awake / 360) / 10;
+      var ll = Math.round((r3.sleep - dd - rr - aa) * 10) / 10;
+      if (ll < 0) ll = 0;
+      r3.stages = { deep:dd, light:ll, rem:rr, awake:aa };
+    }
+  }
+
+  /* Carga → CTL/ATL */
+  var lm = garminLoadMap(g);
+  if (lm.has && ids.length) {
+    var wStart = ids[0];
+    var wEnd   = ymd(new Date());
+    var tl = garminFitness(wStart, wEnd, lm.map);
+    for (i = 0; i < ids.length; i++) {
+      if (tl[ids[i]]) { rows[ids[i]].ctl = tl[ids[i]].ctl; rows[ids[i]].atl = tl[ids[i]].atl; }
+    }
+  }
+
+  ids.sort();
+  var out = [];
+  for (i = 0; i < ids.length; i++) {
+    var r = rows[ids[i]];
+    if (r.hrv || r.restingHR || r.sleep !== null) out.push(r);
+  }
+  return out;
+}
+
+/* Actividades de Garmin al formato que consume assembleData */
+function garminActivities(g){
+  var src = asList(g && g.activities, ['activities','data','items']);
+  var out = [];
+  for (var i = 0; i < src.length; i++) {
+    var a = src[i];
+    if (!a || typeof a !== 'object') continue;
+    var when = a.startTimeLocal || a.startTimeGMT || a.startLocal || a.startGMT ||
+               a.calendarDate || '';
+    out.push({
+      name:        a.activityName || a.name ||
+                   (a.activityType && a.activityType.typeKey) || 'Actividad',
+      start_date:  when,
+      type:        (a.activityType && a.activityType.typeKey) || '',
+      distance:    a.distance || 0,
+      duration:    a.duration || 0,
+      moving_time: a.movingTime || a.duration || 0,
+      average_heartrate: a.averageHR || null
+    });
+  }
+  return out;
+}
+
+function showMfaField(method){
+  var f = $('field-g-mfa');
+  if (f) f.style.display = '';
+  var h = $('hint-g-mfa');
+  if (h) h.innerHTML = 'Te han enviado un c&#243;digo de 6 d&#237;gitos' +
+                       (method ? ' por ' + esc(method) : '') + '. Introd&#250;celo aqu&#237;.';
+  var i = $('inp-g-mfa');
+  if (i) { i.value = ''; i.focus(); }
+}
+function hideMfaField(){
+  var f = $('field-g-mfa'); if (f) f.style.display = 'none';
+  var i = $('inp-g-mfa');   if (i) i.value = '';
 }
 
 /* ---------- 8. OVERLAYS ---------- */
@@ -1858,6 +2188,40 @@ function showErrorModal(msg){
 
 function friendlyError(e){
   var m = String(e && e.message ? e.message : e);
+  var code = (e && e.gCode) || '';
+
+  /* --- Garmin Connect (2&#186; v&#237;a de datos) --- */
+  if (code === 'BAD_CREDENTIALS') {
+    return 'Email o contrase&#241;a de <b>Garmin</b> incorrectos.<br><br>' +
+           'Usa exactamente los mismos datos con los que entras en la app Garmin Connect.';
+  }
+  if (code === 'RATE_LIMIT') {
+    return 'Garmin ha limitado los intentos de acceso.<br><br>' +
+           'Espera unos minutos y vuelve a intentarlo.';
+  }
+  if (code === 'CAPTCHA' || code === 'BLOCKED') {
+    return 'Garmin est&#225; bloqueando el acceso autom&#225;tico.<br><br>' +
+           'Entra una vez en <b>connect.garmin.com</b> desde tu navegador (para superar su control ' +
+           'anti-bots) y vuelve a intentarlo desde otra red.';
+  }
+  if (code === 'TOKEN_EXCHANGE') {
+    return 'Garmin no ha emitido el token de acceso.<br><br>' +
+           'Suele deberse a un inicio de sesi&#243;n bloqueado: espera unos minutos y reintenta.';
+  }
+  if (code === 'REFRESH_FAILED' || code === 'TOKEN_MISSING') {
+    return 'La sesi&#243;n con <b>Garmin</b> ha caducado.<br><br>Vuelve a conectar tu cuenta.';
+  }
+  if (code === 'BAD_CODE') return esc(m);
+  if (m === 'NO_DATA_GARMIN') {
+    return 'No se han encontrado datos recientes en tu cuenta de <b>Garmin</b>.<br><br>' +
+           'Comprueba en la app Garmin Connect que tienes actividad de los &#250;ltimos 60 d&#237;as ' +
+           'y que tu reloj est&#225; sincronizado.';
+  }
+  if (m.indexOf('Sin proxy:') === 0) {
+    return esc(m) + '<br><br>Despliega <b>worker.js</b> con <code>wrangler deploy</code> y revisa ' +
+                    'la variable <b>MY_PROXY</b> del HTML.';
+  }
+
   if (m === 'NO_DATA') {
     return 'No se encontraron datos de <b>wellness</b> en tu cuenta.<br><br>' +
            'Abre Intervals.icu y comprueba que tienes datos de los &#250;ltimos 60 d&#237;as (HRV, sue&#241;o o FC).';
@@ -2177,7 +2541,8 @@ function showDayDetail(key){
     html += row('ATL', d.atl);
     html += row('TSB', (d.tsb > 0 ? '+' : '') + d.tsb, d.tsb < -10 ? '#f87171' : (d.tsb > 5 ? '#22d3a0' : null));
   } else {
-    html += '<div class="empty-note">Sin datos de Intervals.icu para este d&#237;a.</div>';
+    html += '<div class="empty-note">Sin datos de ' +
+            (S.source === 'garmin' ? 'Garmin' : 'Intervals.icu') + ' para este d&#237;a.</div>';
   }
 
   if (lg) {
@@ -2194,7 +2559,12 @@ function showDayDetail(key){
 
   el.innerHTML = html;
   el.className = '';
-  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Guardado: Safari viejo y algunos entornos no lo implementan (o rechazan
+  // el objeto de opciones), y no queremos que se caiga el detalle del día.
+  if (el.scrollIntoView) {
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    catch (e) { try { el.scrollIntoView(false); } catch (e2) {} }
+  }
 }
 
 function row(k, v, color){
@@ -2496,8 +2866,13 @@ function renderLogHistory(){
 
 /* ---------- 14. AJUSTES ---------- */
 function renderSettings(){
-  if ($('display-athlete')) $('display-athlete').innerHTML = S.isDemo ? 'modo demo' : (S.athleteId ? esc(S.athleteId) : '&#8212;');
-  if ($('display-mode'))    $('display-mode').innerHTML    = S.isDemo ? 'Datos de ejemplo' : 'Intervals.icu';
+  if ($('display-athlete')) $('display-athlete').innerHTML =
+      S.isDemo ? 'modo demo'
+               : (S.source === 'garmin'
+                   ? esc(S.garmin.displayName || 'Garmin Connect')
+                   : (S.athleteId ? esc(S.athleteId) : '&#8212;'));
+  if ($('display-mode'))    $('display-mode').innerHTML    =
+      S.isDemo ? 'Datos de ejemplo' : (S.source === 'garmin' ? 'Garmin Connect' : 'Intervals.icu');
   if ($('display-log-count'))$('display-log-count').innerHTML = S.logs.length;
   if ($('display-score'))   $('display-score').innerHTML   = S.data ?
       (S.data.today.recoveryScore + ' &#183; ' + scoreLabel(S.data.today.recoveryScore)) : '&#8212;';
@@ -2561,6 +2936,8 @@ function buildSystemPrompt(){
          'Responde siempre en español, conciso y práctico (máximo 200 palabras). ' +
          'Da recomendaciones concretas de entrenamiento y descanso basándote en los datos. ' +
          'No afirmas que eres un médico ni das diagnósticos. ' +
+         'Fuente de datos: ' + (S.source === 'garmin' ? 'Garmin Connect (incluye fases reales del sueño)'
+                                                      : 'Intervals.icu') + '. ' +
          'DATOS DEL ATLETA — ' + line + logLine;
 }
 
@@ -2689,18 +3066,88 @@ function doConnect(){
 
   S.athleteId = id;
   S.apiKey    = key;
+  S.source    = 'intervals';
+  S.garmin    = { refreshToken:'', clientId:'', displayName:'' };
   S.isDemo    = false;
 
   showLoading('Conectando con Intervals.icu&#8230;');
   fetchData().then(function(d){
     // Solo se persiste la sesión cuando Intervals.icu la ha aceptado
-    safeSet('riq_config', { athleteId: id, apiKey: key });
+    saveConfig();
     initApp(d);
     showTab('dashboard');
     showToast('&#9989; Conectado');
   }).catch(function(e){
     hideLoading();
     S.apiKey = '';
+    showErrorModal(friendlyError(e));
+  });
+}
+
+/* Conexi&#243;n con Garmin Connect (2&#186; v&#237;a) */
+function pickSource(src){
+  S.pickSource = src;
+  var opts = document.querySelectorAll('.src-opt');
+  for (var i = 0; i < opts.length; i++) {
+    var on = opts[i].getAttribute('data-src') === src;
+    if (on) opts[i].classList.add('active'); else opts[i].classList.remove('active');
+  }
+  var fi = $('form-intervals'), fg = $('form-garmin');
+  if (fi) fi.style.display = (src === 'intervals') ? '' : 'none';
+  if (fg) fg.style.display = (src === 'garmin') ? '' : 'none';
+  if (src !== 'garmin') hideMfaField();
+}
+
+function doConnectGarmin(){
+  var email = ($('inp-g-email') ? $('inp-g-email').value : '').replace(/^\s+|\s+$/g, '');
+  var pass  = ($('inp-g-pass')  ? $('inp-g-pass').value  : '');
+  var code  = ($('inp-g-mfa')   ? $('inp-g-mfa').value   : '').replace(/\s+/g, '');
+
+  if (!email) { showErrorModal('Introduce el <b>email</b> de tu cuenta Garmin.'); return; }
+  if (!pass && !code) {
+    showErrorModal(S.mfaState
+      ? 'Introduce el <b>c&#243;digo de verificaci&#243;n</b> de 6 d&#237;gitos que te ha enviado Garmin.'
+      : 'Introduce la <b>contrase&#241;a</b> de tu cuenta Garmin.');
+    return;
+  }
+
+  var payload = code
+    ? { action:'mfa', mfaState:S.mfaState, mfaMethod:S.mfaMethod, code:code }
+    : { action:'login', email:email, password:pass };
+
+  showLoading(S.mfaState ? 'Verificando el c&#243;digo&#8230;' : 'Conectando con Garmin&#8230;');
+
+  garminPost(payload).then(function(r){
+    S.source    = 'garmin';
+    S.isDemo    = false;
+    S.garmin    = { refreshToken: r.refreshToken || '',
+                    clientId:     r.clientId     || '',
+                    displayName:  r.displayName  || '' };
+    S.mfaState  = '';
+    S.mfaMethod = '';
+    hideMfaField();
+    if ($('inp-g-pass')) $('inp-g-pass').value = '';
+    saveConfig();
+    setLoadText('Descargando tus datos de Garmin&#8230;');
+    return fetchData();
+  }).then(function(d){
+    if (!d) return;
+    initApp(d);
+    showTab('dashboard');
+    showToast('&#9989; Conectado con Garmin' +
+              (S.garmin.displayName ? ' &#183; ' + esc(S.garmin.displayName) : ''));
+  }).catch(function(e){
+    hideLoading();
+    if (e && e.mfa) {
+      S.mfaState  = e.mfa.mfaState || '';
+      S.mfaMethod = e.mfa.mfaMethod || 'email';
+      showMfaField(S.mfaMethod);
+      showToast('C&#243;digo enviado: rev&#237;salo y vuelve a pulsar Conectar');
+      return;
+    }
+    if (e && (e.gCode === 'REFRESH_FAILED' || e.gCode === 'TOKEN_MISSING')) {
+      S.garmin = { refreshToken:'', clientId:'', displayName:'' };
+    }
     showErrorModal(friendlyError(e));
   });
 }
@@ -2715,7 +3162,13 @@ function doSync(){
     }, 350);
     return;
   }
-  if (!S.apiKey) { showToast('&#9888;&#65039; No hay credenciales guardadas'); return; }
+  if (S.source === 'garmin') {
+    if (!S.garmin || !S.garmin.refreshToken) {
+      showToast('&#9888;&#65039; No hay credenciales guardadas'); return;
+    }
+  } else if (!S.apiKey) {
+    showToast('&#9888;&#65039; No hay credenciales guardadas'); return;
+  }
 
   showLoading('Sincronizando&#8230;');
   fetchData().then(function(d){
@@ -2731,6 +3184,10 @@ function doLogout(){
   safeDel('riq_config');
   S.athleteId = '';
   S.apiKey    = '';
+  S.source    = 'intervals';
+  S.garmin    = { refreshToken:'', clientId:'', displayName:'' };
+  S.mfaState  = '';
+  S.mfaMethod = '';
   S.isDemo    = false;
   S.data      = null;
   S.chatHistory = [];
@@ -2742,6 +3199,10 @@ function doLogout(){
 
   if ($('inp-key')) $('inp-key').value = '';
   if ($('inp-athlete')) $('inp-athlete').value = '';
+  if ($('inp-g-email')) $('inp-g-email').value = '';
+  if ($('inp-g-pass'))  $('inp-g-pass').value  = '';
+  hideMfaField();
+  pickSource('intervals');
 
   var setup = $('setup-screen');
   var app   = $('app-screen');
@@ -2754,14 +3215,28 @@ function doLogout(){
 
 function restoreSession(){
   var cfg = safeGet('riq_config', null);
-  if (!cfg || !cfg.athleteId || !cfg.apiKey) return false;
+  if (!cfg) return false;
 
-  S.athleteId = cfg.athleteId;
-  S.apiKey    = cfg.apiKey;
-  S.isDemo    = false;
-
-  if ($('inp-athlete')) $('inp-athlete').value = cfg.athleteId;
-  if ($('inp-key'))     $('inp-key').value = cfg.apiKey;
+  var isGarmin = cfg.source === 'garmin';
+  if (isGarmin) {
+    if (!cfg.garmin || !cfg.garmin.refreshToken) return false;
+    S.source = 'garmin';
+    S.garmin = cfg.garmin;
+    S.athleteId = cfg.athleteId || '';
+    S.apiKey    = '';
+    pickSource('garmin');
+    if ($('inp-g-email') && S.garmin.displayName) $('inp-g-email').value = '';
+  } else {
+    if (!cfg.athleteId || !cfg.apiKey) return false;
+    S.source    = 'intervals';
+    S.garmin    = { refreshToken:'', clientId:'', displayName:'' };
+    S.athleteId = cfg.athleteId;
+    S.apiKey    = cfg.apiKey;
+    pickSource('intervals');
+    if ($('inp-athlete')) $('inp-athlete').value = cfg.athleteId;
+    if ($('inp-key'))     $('inp-key').value = cfg.apiKey;
+  }
+  S.isDemo = false;
 
   showLoading('Restaurando sesi&#243;n&#8230;');
   fetchData().then(function(d){
@@ -2769,12 +3244,20 @@ function restoreSession(){
     showToast('&#9989; Sesi&#243;n restaurada');
   }).catch(function(e){
     // Fallo al restaurar: limpiar y dejar el setup limpio
+    if (isGarmin && e && (e.gCode === 'REFRESH_FAILED' || e.gCode === 'TOKEN_MISSING')) {
+      // Solo se ha caducado el token: no borramos nada, hay que volver a conectar
+      hideLoading();
+      showErrorModal('La sesi&#243;n con <b>Garmin</b> ha caducado.<br><br>' +
+                      friendlyError(e) + '<br><br>Conecta de nuevo con tu cuenta.');
+      return;
+    }
     safeDel('riq_config');
     S.apiKey = '';
+    S.garmin = { refreshToken:'', clientId:'', displayName:'' };
     if ($('inp-key')) $('inp-key').value = '';
     hideLoading();
     showErrorModal('No se pudo restaurar la sesi&#243;n.<br><br>' + friendlyError(e) +
-                    '<br><br>Revisa tu API Key o reconecta manualmente.');
+                    '<br><br>Revisa tus credenciales o reconecta manualmente.');
   });
   return true;
 }
@@ -2785,7 +3268,22 @@ function restoreSession(){
    ================================================================ */
 
 /* Setup */
+wire('src-switch', 'click', function(e){
+  var t = e.target;
+  while (t && t !== this) {
+    if (t.getAttribute && t.getAttribute('data-src')) break;
+    t = t.parentNode;
+  }
+  if (t && t.getAttribute && t.getAttribute('data-src')) pickSource(t.getAttribute('data-src'));
+});
 wire('btn-connect', 'click', doConnect);
+wire('btn-garmin', 'click', doConnectGarmin);
+wire('inp-g-pass', 'keydown', function(e){
+  if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); doConnectGarmin(); }
+});
+wire('inp-g-mfa', 'keydown', function(e){
+  if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); doConnectGarmin(); }
+});
 wire('btn-demo', 'click', function(){
   S.isDemo = true;
   S.athleteId = 'demo';

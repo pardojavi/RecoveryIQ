@@ -1,0 +1,13 @@
+{
+  "name": "recoveryiq-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Suites de jsdom de RecoveryIQ (test-smoke.mjs + test-garmin.mjs)",
+  "scripts": {
+    "test": "node test-smoke.mjs && node test-garmin.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "22.1.0"
+  }
+}
