@@ -909,39 +909,6 @@ async function tpRefresh(refresh) {
   };
 }
 
-/* Diagnóstico del POST de login cuando NO ha salido `Production_tpAuth`.
-   Hasta ahora todo lo que no fuera 401/403 caía en "TP_BLOCKED" y el usuario
-   veía "captcha", aunque el motivo real fuera otra cosa. Comprobado con curl
-   (2026-10-07):
-     - credenciales mal  → HTTP 200 + "The username or password you entered is
-       incorrect." y NINGÚN Set-Cookie
-     - par antiforgery mal (token de formulario y cookie de distinta petición)
-       → HTTP 401 y la página re-renderizada sin cookies
-   Devuelve un código que ya entiende friendlyError() + un detalle técnico. */
-function tpLoginVerdict(status, body) {
-  var l = String(body || '').toLowerCase();
-  if (status === 429) return { code: 'RATE_LIMIT', detail: 'HTTP 429 · demasiados intentos' };
-  if (/invalid_credentials_message|username or password you entered is incorrect|the username or password/.test(l)) {
-    return { code: 'TP_BAD_CREDENTIALS', detail: 'HTTP ' + status + ' · credenciales incorrectas' };
-  }
-  if (status === 401 || status === 403) {
-    return { code: 'TP_BAD_CREDENTIALS', detail: 'HTTP ' + status + ' · token antiforgery rechazado' };
-  }
-  if (/captcha|are you a robot|browser verification|cf-challenge|hcaptcha|recaptcha|unusual traffic/.test(l)) {
-    return { code: 'TP_BLOCKED', detail: 'HTTP ' + status + ' · reto anti-bots' };
-  }
-  if (/two.?factor|verification code|selectedmfamethod[^>]*>[^<]*<option|authenticator/.test(l)) {
-    return { code: 'TP_BLOCKED', detail: 'HTTP ' + status + ' · verificación en dos pasos' };
-  }
-  if (status >= 300 && status < 400) {
-    return { code: 'TP_BLOCKED', detail: 'HTTP ' + status + ' · redirigió sin Production_tpAuth' };
-  }
-  if (status === 200) {
-    return { code: 'TP_LOGIN_FAILED', detail: 'HTTP 200 · sin mensaje de error reconocible' };
-  }
-  return { code: 'TP_LOGIN_FAILED', detail: 'HTTP ' + status };
-}
-
 /* Login con email + contraseña, igual que hace la app oficial. */
 async function tpLogin(email, password) {
   let page;
@@ -952,22 +919,15 @@ async function tpLogin(email, password) {
   } catch (e) { return { error: 'NETWORK' }; }
 
   const html = await page.text().catch(() => '');
-
-  /* El token del formulario y la cookie `__RequestVerificationToken` tienen que
-     salir de ESTA misma respuesta: si no, TrainingPeaks contesta 401. */
   const jar = tpCookieJar(tpSetCookies(page));
   const m = html.match(/name="__RequestVerificationToken"[^>]*value="([^"]+)"/) ||
             html.match(/value="([^"]+)"[^>]*name="__RequestVerificationToken"/);
-  if (!m) return { error: 'TP_BLOCKED', detail: 'HTTP ' + page.status + ' · sin __RequestVerificationToken' };
+  if (!m) return { error: 'TP_BLOCKED', detail: 'sin-token' };
 
   const form = new URLSearchParams();
   form.set('Username', email);
   form.set('Password', password);
   form.set('__RequestVerificationToken', m[1]);
-  form.set('CaptchaHidden', 'true');   // los 7 campos del formulario real
-  form.set('CaptchaToken', '');
-  form.set('Attempts', '1');
-  form.set('SelectedMfaMethod', '');
 
   let res;
   try {
@@ -989,15 +949,20 @@ async function tpLogin(email, password) {
   const setc = tpSetCookies(res);
   const cookie = tpCookieNamed(setc, 'Production_tpAuth');
 
-  if (cookie) {
-    const ex = await tpExchange(cookie);
-    if (ex.error) return ex;
-    return { token: ex };
+  if (!cookie) {
+    if (res.status === 429) return { error: 'RATE_LIMIT' };
+    // Sin cookie: contraseña incorrecta, captcha o verificación en dos pasos.
+    // Se distingue 401/403 (claramente credenciales) del 200 (TP ha devuelto
+    // la propia página de login con un error, o un reto anti-bots).
+    return {
+      error: res.status === 401 || res.status === 403 ? 'TP_BAD_CREDENTIALS' : 'TP_BLOCKED',
+      detail: 'sin-cookie http ' + res.status,
+    };
   }
 
-  const body = await res.text().catch(() => '');
-  const v = tpLoginVerdict(res.status, body);
-  return { error: v.code, detail: v.detail };
+  const ex = await tpExchange(cookie);
+  if (ex.error) return ex;
+  return { token: ex };
 }
 
 /* Resuelve un token partiendo de lo que guarde el cliente: primero el refresh
@@ -1166,9 +1131,7 @@ async function handleTrainingPeaks(request) {
             ? 'Email o contraseña de TrainingPeaks incorrectos.'
             : r.error === 'TP_BLOCKED'
               ? 'TrainingPeaks ha exigido una comprobación extra (captcha o verificación en dos pasos).'
-              : r.error === 'TP_LOGIN_FAILED'
-                ? 'TrainingPeaks no ha aceptado el inicio de sesión.'
-                : 'No se pudo iniciar sesión en TrainingPeaks.' }, st);
+              : 'No se pudo iniciar sesión en TrainingPeaks.' }, st);
       }
       cookie = r.token.cookie;
       const tok = r.token;

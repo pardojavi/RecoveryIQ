@@ -226,12 +226,8 @@ console.log('\n== TrainingPeaks: errores amables ==');
 run('S.source = "trainingpeaks"');
 ok(run('friendlyError({message:"x", gCode:"TP_BAD_CREDENTIALS"})').indexOf('incorrectos') >= 0,
    'credenciales mal → incorrectos');
-ok(run('friendlyError({message:"x", gCode:"TP_BAD_CREDENTIALS"})').indexOf('Google') >= 0,
-   'credenciales mal → avisa de las cuentas con Google/Apple');
 ok(run('friendlyError({message:"x", gCode:"TP_BLOCKED"})').indexOf('Production_tpAuth') >= 0,
    'bloqueo → sugiere la cookie');
-ok(run('friendlyError({message:"x", gCode:"TP_LOGIN_FAILED"})').indexOf('Production_tpAuth') >= 0,
-   'login rechazado → sugiere la cookie');
 ok(run('friendlyError({message:"x", gCode:"TP_REAUTH"})').indexOf('caducado') >= 0,
    'sesión caducada → caducado');
 ok(run('friendlyError({message:"NO_DATA_TP"})').indexOf('TrainingPeaks') >= 0,
@@ -366,7 +362,6 @@ run('doLogout()');
 
 console.log('\n== TrainingPeaks: TP_BLOCKED despliega la alternativa por cookie ==');
 loginFail = { status: 200, body: { ok: false, code: 'TP_BLOCKED',
-  detail: 'HTTP 200 · reto anti-bots',
   error: 'TrainingPeaks ha exigido una comprobación extra.' } };
 $('inp-tp-email').value = 'javier@example.com';
 $('inp-tp-pass').value = 'secreta';
@@ -374,32 +369,6 @@ run('doConnectTp()');
 await wait(120);
 eq($('field-tp-cookie').style.display, '',
    'el captcha abre el campo de la cookie', $('field-tp-cookie').style.display);
-const sheetTexts = () => {
-  const s = w.document.querySelectorAll('.sheet-overlay');
-  return s.length ? s[s.length - 1].textContent : '';
-};
-ok(sheetTexts().indexOf('Detalle:') >= 0,
-   'el modal enseña el detalle técnico del worker', sheetTexts());
-ok(sheetTexts().indexOf('reto anti-bots') >= 0,
-   'el detalle concreto llega al usuario', sheetTexts());
-loginFail = null;
-
-console.log('\n== TrainingPeaks: credenciales incorrectas NO se venden como captcha ==');
-/* Comprobado con curl (2026-10-07): contraseña mala → HTTP 200 + "The username
-   or password you entered is incorrect." sin cookie. El worker lo traduce a
-   TP_BAD_CREDENTIALS con detalle, no a TP_BLOCKED. */
-loginFail = { status: 200, body: { ok: false, code: 'TP_BAD_CREDENTIALS',
-  detail: 'HTTP 200 · credenciales incorrectas',
-  error: 'Email o contraseña de TrainingPeaks incorrectos.' } };
-run('showTpCookieField(false)');
-run('doConnectTp()');
-await wait(120);
-ok(sheetTexts().indexOf('credenciales incorrectas') >= 0,
-   'el detalle dice que eran las credenciales', sheetTexts());
-ok(sheetTexts().indexOf('Google') >= 0,
-   'y ofrece la cookie por si la cuenta es de Google/Apple', sheetTexts());
-eq($('field-tp-cookie').style.display, 'none',
-   'una contraseña mala no despliega el campo de la cookie');
 loginFail = null;
 
 console.log('\n== TrainingPeaks: conexión por cookie pegada ==');
