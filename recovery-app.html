@@ -139,7 +139,7 @@ button{border:0; background:none; cursor:pointer; padding:0;}
   display:flex;
   justify-content:space-around;
   align-items:flex-start;
-  gap:2px;
+  gap:1px;
   padding:8px 6px calc(var(--safe-bottom) + 6px);
   background:rgba(10,10,15,0.82);
   backdrop-filter:blur(20px);
@@ -159,7 +159,10 @@ button{border:0; background:none; cursor:pointer; padding:0;}
   transition:opacity .18s ease, background .18s ease;
 }
 .nav-item .nav-ico{font-size:19px; line-height:1;}
-.nav-item .nav-lbl{font-size:10px; font-weight:500; letter-spacing:.2px;}
+.nav-item .nav-lbl{
+  font-size:10px; font-weight:500; letter-spacing:.1px;
+  max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
 .nav-item.active{opacity:1; background:rgba(108,99,255,.14);}
 .nav-item.active .nav-ico{color:var(--accent2);}
 .nav-item:active{transform:scale(.95);}
@@ -999,6 +1002,84 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 @keyframes sheetUp{from{transform:translateY(100%)} to{transform:translateY(0)}}
 @keyframes blink{0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)}}
 
+/* ---------- Evoluci&#243;n (pesta&#241;a) ---------- */
+#evo-hero{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r2); padding:16px 14px 12px; margin-bottom:6px;
+}
+.evo-head{display:flex; align-items:flex-start; justify-content:space-between; gap:10px;}
+.evo-big{
+  font-size:46px; font-weight:700; line-height:.95; letter-spacing:-1.5px;
+}
+.evo-cap{
+  font-size:10px; color:var(--text3); text-transform:uppercase;
+  letter-spacing:.7px; margin-top:5px;
+}
+.evo-when{text-align:right; font-size:12px; color:var(--text2); line-height:1.65;}
+.evo-when b{color:var(--text); font-weight:600;}
+.evo-delta{font-weight:600;}
+.evo-delta.up{color:var(--green);}
+.evo-delta.down{color:var(--red);}
+.evo-delta.flat{color:var(--text3);}
+.evo-chart{width:100%; height:auto; display:block; margin-top:6px;}
+.evo-legend{
+  display:flex; gap:14px; flex-wrap:wrap;
+  font-size:10.5px; color:var(--text3); margin-top:4px;
+}
+.evo-legend i{
+  display:inline-block; width:11px; height:3px; border-radius:2px;
+  margin-right:5px; vertical-align:middle; font-style:normal;
+}
+.act-row{
+  display:flex; align-items:center; gap:11px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r); padding:11px 13px; margin-bottom:8px;
+}
+.act-ico{font-size:21px; width:30px; text-align:center; flex:0 0 auto;}
+.act-main{flex:1 1 auto; min-width:0;}
+.act-main b{display:block; font-size:14px; font-weight:600;}
+.act-main span{font-size:11.5px; color:var(--text3);}
+.act-load{
+  flex:0 0 auto; font-size:12.5px; font-weight:600;
+  color:var(--accent2); text-align:right;
+}
+.act-load small{display:block; font-size:9.5px; font-weight:400; color:var(--text3);}
+.scores-list{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:var(--r); padding:2px 14px;
+}
+.score-row{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:9px 0; font-size:13px; border-bottom:1px solid var(--border);
+}
+.score-row:last-child{border-bottom:0;}
+.score-row span{color:var(--text2);}
+.score-row b{font-weight:600;}
+.score-row .pos{color:var(--green);}
+.score-row .neg{color:var(--red);}
+.score-row.total{font-weight:600; color:var(--text);}
+.score-row.total span{color:var(--text); font-weight:600;}
+.load-days{display:flex; align-items:flex-end; gap:6px; height:92px; margin-top:4px;}
+.load-col{
+  flex:1 1 0; min-width:0; height:100%;
+  display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:5px;
+}
+.load-num{font-size:9.5px; color:var(--text3); line-height:1;}
+.load-bar{
+  width:100%; max-width:28px; min-height:3px;
+  border-radius:7px 7px 3px 3px;
+  background:linear-gradient(180deg,var(--accent2),var(--accent));
+}
+.load-bar.empty{background:rgba(255,255,255,.07);}
+.load-day{font-size:10px; color:var(--text3); line-height:1;}
+.load-day.today{color:var(--accent2); font-weight:600;}
+.empty-note{
+  font-size:12.5px; color:var(--text3); text-align:center; padding:16px 14px;
+  background:var(--card); border:1px dashed var(--border); border-radius:var(--r);
+  line-height:1.55;
+}
+.evo-note{font-size:11px; color:var(--text3); line-height:1.6; margin-top:14px;}
+
 /* ============================================================
    DESKTOP — simula iPhone
    ============================================================ */
@@ -1148,6 +1229,24 @@ button{border:0; background:none; cursor:pointer; padding:0;}
       <div class="section-title">Conclusiones</div>
       <div class="insights-list" id="insights-list"></div>
       <a class="link-analysis" id="link-analysis">Ver an&#225;lisis &#8594;</a>
+    </div>
+
+    <!-- ---------- EVOLUCI&#211;N ---------- -->
+    <div id="tab-evo" class="tab-content">
+
+      <div class="section-title">Evoluci&#243;n de tu energ&#237;a hoy</div>
+      <div id="evo-hero"></div>
+
+      <div class="section-title">Sesiones de hoy</div>
+      <div id="evo-acts"></div>
+
+      <div class="section-title">Desglose del &#237;ndice de hoy</div>
+      <div id="evo-parts"></div>
+
+      <div class="section-title">Carga de los &#250;ltimos 7 d&#237;as</div>
+      <div id="evo-week"></div>
+
+      <div class="evo-note" id="evo-note"></div>
     </div>
 
     <!-- ---------- CALENDARIO ---------- -->
@@ -1364,6 +1463,9 @@ button{border:0; background:none; cursor:pointer; padding:0;}
   <div class="bottom-nav">
     <button class="nav-item active" data-tab="dashboard">
       <span class="nav-ico">&#127968;</span><span class="nav-lbl">Inicio</span>
+    </button>
+    <button class="nav-item" data-tab="evo">
+      <span class="nav-ico">&#128200;</span><span class="nav-lbl">Evoluci&#243;n</span>
     </button>
     <button class="nav-item" data-tab="calendar">
       <span class="nav-ico">&#128197;</span><span class="nav-lbl">Calendario</span>
@@ -1599,35 +1701,262 @@ function saveConfig(){
   }
 }
 
-/* ---------- 4. SCORE ---------- */
-function calcScore(w){
-  if (!w) return 0;
-  var score = 50; // base neutral
+/* ---------- 4. SCORE + ACTIVIDADES ---------- */
+/* Una misma sesión llega distinta según la fuente: Intervals.icu manda "Ride"
+   con icu_training_load (TSS) y Garmin manda "cycling" con duraci&#243;n en
+   segundos. Aqu&#237; se reducen ambas a deporte + duraci&#243;n + carga. */
+var SPORT_MAP = {
+  ride:'ciclismo', cycling:'ciclismo', virtualride:'ciclismo', virtual_cycling:'ciclismo',
+  mountainbikeride:'ciclismo', mountainbike:'ciclismo', gravelride:'ciclismo',
+  btt:'ciclismo', cyclocross:'ciclismo', trackcycling:'ciclismo', indortrainer:'ciclismo',
+  bmx:'ciclismo', handcycle:'ciclismo', velo:'ciclismo',
+
+  run:'correr', running:'correr', trailrun:'correr', trail_running:'correr',
+  treadmill:'correr', virtualrun:'correr', marathon:'correr',
+
+  walk:'caminata', walking:'caminata', pedestrian:'caminata',
+  hike:'senderismo', hiking:'senderismo',
+
+  swim:'natacion', swimming:'natacion', openwaterswim:'natacion',
+
+  strength:'fuerza', strengthtraining:'fuerza', weighttraining:'fuerza',
+  gym:'fuerza', crossfit:'fuerza', bodypump:'fuerza',
+
+  yoga:'yoga', pilates:'yoga',
+  mobility:'movilidad', stretching:'movilidad', foamrolling:'movilidad',
+
+  row:'remo', rowing:'remo', kayak:'remo',
+
+  alpineskiing:'esqui', crosscountryskiing:'esqui', skiing:'esqui', snowboarding:'esqui',
+
+  soccer:'futbol', football:'futbol', futsal:'futbol',
+  basketball:'baloncesto', volleyball:'voleibol', tennis:'tenis', padel:'tenis',
+
+  hiit:'hiit', intervaltraining:'hiit', circuittraining:'hiit',
+  elliptical:'cardio', crosstrainer:'cardio', stairstepper:'cardio',
+  aerobics:'cardio', zumba:'cardio', dance:'cardio',
+
+  boxing:'boxeo', martialarts:'artesmarciales',
+  climbing:'escalada', rockclimbing:'escalada',
+  golf:'golf', hockey:'hockey', cricket:'cricket', baseball:'beisbol',
+  badminton:'badminton'
+};
+
+/* [icono HTML, nombre en espa&#241;ol, factor de esfuerzo por minuto] */
+var SPORT_INFO = {
+  ciclismo:    ['&#128692;', 'Ciclismo',          0.65],
+  correr:      ['&#127939;', 'Correr',            0.90],
+  caminata:    ['&#128694;', 'Caminata',          0.20],
+  senderismo:  ['&#129470;', 'Senderismo',        0.45],
+  natacion:    ['&#127946;', 'Nataci&#243;n',     0.75],
+  fuerza:      ['&#127947;&#65039;', 'Fuerza',    0.55],
+  yoga:        ['&#129496;', 'Yoga',              0.15],
+  movilidad:   ['&#128170;', 'Movilidad',         0.15],
+  remo:        ['&#128675;', 'Remo',              0.80],
+  esqui:       ['&#9975;&#65039;', 'Esqu&#237;',  0.70],
+  futbol:      ['&#9917;',   'F&#250;tbol',       0.70],
+  baloncesto:  ['&#127936;', 'Baloncesto',        0.70],
+  voleibol:    ['&#9918;',   'V&#243;leybol',     0.60],
+  tenis:       ['&#127934;', 'Tenis',             0.65],
+  badminton:   ['&#127992;', 'B&#225;dminton',    0.60],
+  hiit:        ['&#128293;', 'HIIT',              0.95],
+  cardio:      ['&#9889;',   'Cardio',            0.60],
+  boxeo:       ['&#129354;', 'Boxeo',             0.85],
+  artesmarciales: ['&#129355;', 'Artes marciales', 0.80],
+  escalada:    ['&#9968;',   'Escalada',          0.55],
+  golf:        ['&#9971;',   'Golf',              0.30],
+  hockey:      ['&#127953;', 'Hockey',            0.75],
+  cricket:     ['&#127951;', 'Cricket',           0.55],
+  beisbol:     ['&#9918;',   'B&#233;isbol',      0.45],
+  otro:        ['&#9889;',   'Actividad',         0.50]
+};
+
+/* Por si la fuente manda el deporte en otro idioma o solo el nombre libre */
+var SPORT_HINTS = [
+  ['camin', 'caminata'], ['paseo', 'caminata'], ['walk', 'caminata'],
+  ['corr',  'correr'],   ['trote', 'correr'],   [' run', 'correr'],
+  ['cicl',  'ciclismo'], ['bici',  'ciclismo'], ['bike', 'ciclismo'],
+  ['rodillo', 'ciclismo'], ['mtb', 'ciclismo'],
+  ['nata',  'natacion'], ['swim',  'natacion'],
+  ['fuerza', 'fuerza'],  ['pesas', 'fuerza'],   ['gimnasio', 'fuerza'],
+  ['sender', 'senderismo'], ['hike', 'senderismo'],
+  ['yoga',  'yoga'],     ['corrida', 'correr'], ['trotar', 'correr']
+];
+
+function sportKey(a){
+  if (!a) return 'otro';
+  var t = String(a.type || a.sport || a.category || '').toLowerCase();
+  t = t.replace(/[^a-z_]/g, '');
+  if (t && SPORT_MAP[t]) return SPORT_MAP[t];
+  var n = String(a.name || a.activityName || '').toLowerCase();
+  for (var i = 0; i < SPORT_HINTS.length; i++) {
+    if (n.indexOf(SPORT_HINTS[i][0]) >= 0) return SPORT_HINTS[i][1];
+  }
+  return 'otro';
+}
+
+function actDate(a){
+  if (!a) return null;
+  var s = a.start_date_local || a.start_date || a.startTimeLocal || a.date || a.calendarDate || '';
+  s = String(s || '').replace(' ', 'T');
+  if (!s) return null;
+  var d = new Date(s);
+  if (isNaN(d.getTime())) d = new Date(String(a.start_date || a.date || ''));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/* Clave de d&#237;a local. Se lee del texto cuando existe: as&#237; no depende
+   del huso horario del navegador. */
+function actDayKey(a){
+  if (!a) return '';
+  var s = String(a.start_date_local || a.start_date || a.startTimeLocal || a.date || a.calendarDate || '');
+  var m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  var d = actDate(a);
+  return d ? ymd(d) : '';
+}
+
+function actHour(a){
+  if (!a) return null;
+  var s = String(a.start_date_local || a.start_date || a.startTimeLocal || a.date || '');
+  var hasTz = /Z$/i.test(s) || /[+-]\d{2}:?\d{2}$/.test(s);
+  if (!hasTz) {
+    var m = s.match(/(\d{1,2}):(\d{2})/);
+    if (m) return clamp(parseInt(m[1], 10) + parseInt(m[2], 10) / 60, 0, 23.99);
+  }
+  var d = actDate(a);
+  return d ? d.getHours() + d.getMinutes() / 60 : null;
+}
+
+/* Duraci&#243;n en minutos (Intervals y Garmin mandan segundos) */
+function actMinutes(a){
+  if (!a) return 0;
+  var m = parseFloat(a.moving_time || a.duration || a.elapsed_time || a.total_time) || 0;
+  if (m <= 0) return 0;
+  if (m > 86400) m = m / 60;
+  return Math.max(1, Math.round(Math.min(m, 86400) / 60));
+}
+
+/* Puntos de carga de una sesi&#243;n: TSS si lo hay, si no duraci&#243;n x deporte */
+function actLoad(a){
+  if (!a) return 0;
+  var tl = parseFloat(a.icu_training_load || a.trainingLoad || a.tss ||
+                      a.activityTrainingLoad || a.load) || 0;
+  if (tl > 0) return Math.min(400, Math.round(tl));
+  var mins = actMinutes(a);
+  if (mins <= 0) return 0;
+  var sp = SPORT_INFO[sportKey(a)] || SPORT_INFO.otro;
+  return Math.min(400, Math.round(mins * sp[2]));
+}
+
+function groupActivities(list){
+  var out = {}, i, k;
+  if (!list) return out;
+  for (i = 0; i < list.length; i++) {
+    if (!list[i] || typeof list[i] !== 'object') continue;
+    k = actDayKey(list[i]);
+    if (!k) continue;
+    if (!out[k]) out[k] = [];
+    out[k].push(list[i]);
+  }
+  for (k in out) {
+    if (!out.hasOwnProperty(k)) continue;
+    out[k].sort(function(x, y){
+      var hx = actHour(x), hy = actHour(y);
+      if (hx === null) hx = 99;
+      if (hy === null) hy = 99;
+      return hx - hy;
+    });
+  }
+  return out;
+}
+
+function dayLoad(list){
+  var s = 0, i;
+  if (list) for (i = 0; i < list.length; i++) s += actLoad(list[i]);
+  return Math.round(s);
+}
+
+function actInfo(a){
+  var key  = sportKey(a);
+  var sp   = SPORT_INFO[key] || SPORT_INFO.otro;
+  var mins = actMinutes(a);
+  var raw  = a && a.name ? String(a.name).replace(/^\s+|\s+$/g, '') : '';
+  var h    = actHour(a);
+  return {
+    icon:  sp[0],
+    name:  (key === 'otro' && raw) ? raw : sp[1],
+    mins:  mins,
+    hour:  h,
+    at:    h === null ? '' : (pad2(Math.floor(h)) + ':' + pad2(Math.round((h - Math.floor(h)) * 60))),
+    load:  actLoad(a)
+  };
+}
+
+/* El &#237;ndice se descompone para poder explicarlo: adem&#225;s de HRV, FC,
+   sue&#241;o y TSB entra la actividad de la jornada, cruzada con la HRV. */
+function scoreParts(w, acts){
+  if (!w) return { score:0, load:0, actDelta:0, parts:[] };
+
+  var score = 50, d, parts = [];
 
   // HRV
   if (w.hrv && avgHRV) {
-    score += Math.min(25, ((w.hrv - avgHRV) / avgHRV) * 150);
+    d = Math.min(25, ((w.hrv - avgHRV) / avgHRV) * 150);
+    score += d;
+    parts.push({ label:'HRV', delta:d });
   }
 
-  // FC reposo: más baja = mejor
+  // FC reposo: m&#225;s baja = mejor
   if (w.restingHR && avgHR) {
-    score += Math.min(15, ((avgHR - w.restingHR) / avgHR) * 80);
+    d = Math.min(15, ((avgHR - w.restingHR) / avgHR) * 80);
+    score += d;
+    parts.push({ label:'FC reposo', delta:d });
   }
 
-  // Sueño: óptimo 7-9h
+  // Sue&#241;o: &#243;ptimo 7-9h
   var sleep = getSleep(w);
   if (sleep !== null) {
-    if (sleep >= 7 && sleep <= 9) score += 10;
-    else if (sleep >= 6)          score += 4;
-    else                          score -= 8;
+    d = (sleep >= 7 && sleep <= 9) ? 10 : (sleep >= 6 ? 4 : -8);
+    score += d;
+    parts.push({ label:'Sue&#241;o', delta:d });
   }
 
   // TSB = CTL - ATL
   if (w.ctl && w.atl) {
-    score += Math.min(10, Math.max(-10, (w.ctl - w.atl) * 0.5));
+    d = Math.min(10, Math.max(-10, (w.ctl - w.atl) * 0.5));
+    score += d;
+    parts.push({ label:'TSB', delta:d });
   }
 
-  return Math.max(0, Math.min(100, Math.round(score)));
+  // Sesiones del d&#237;a: cuesta frescura, salvo que sea solo un paseo
+  var load = dayLoad(acts), ad = 0;
+  if (load > 0) {
+    if (load < 15) {
+      ad = 3; // moverse un poco es recuperaci&#243;n activa
+    } else {
+      ad = -Math.min(16, load * 0.22);
+      if (w.hrv && avgHRV) {
+        var hp = (w.hrv - avgHRV) / avgHRV;
+        if (hp >= 0.05) ad += 3;                       // la HRV aguanta la carga
+        else if (hp <= -0.08 && load >= 35) ad -= 3;   // carga alta con HRV hundida
+      }
+    }
+    ad = clamp(ad, -18, 4);
+    score += ad;
+    parts.push({ label:'Actividad de hoy', delta:ad });
+  }
+
+  return {
+    score:    Math.max(0, Math.min(100, Math.round(score))),
+    load:     load,
+    actDelta: ad,
+    parts:    parts
+  };
+}
+
+function calcScore(w, acts){
+  return scoreParts(w, acts).score;
 }
 
 function scoreColor(score){
@@ -1709,10 +2038,13 @@ function assembleData(rows, activities){
   avgHR    = rs.length ? sr / rs.length : 0;
   avgSleep = ss.length ? ss2 / ss.length : 0;
 
+  var byDay = groupActivities(activities);
   var dailyMap = {};
   for (i = 0; i < rows.length; i++) {
     var r = rows[i];
     var ctl = r.ctl || 0, atl = r.atl || 0;
+    var acts = byDay[r.id] || null;
+    var sp   = scoreParts(r, acts);
     dailyMap[r.id] = {
       hrv:       r.hrv,
       restingHR: r.restingHR,
@@ -1721,7 +2053,13 @@ function assembleData(rows, activities){
       ctl:       ctl,
       atl:       atl,
       tsb:       Math.round((ctl - atl) * 10) / 10,
-      score:     calcScore(r),
+      score:     sp.score,
+      // Energ&#237;a con la que te levantaste: el mismo &#237;ndice sin la sesi&#243;n del d&#237;a
+      morning:   acts ? calcScore(r, null) : sp.score,
+      load:      sp.load,
+      actDelta:  sp.actDelta,
+      parts:     sp.parts,
+      acts:      acts,
       body:      r.body || null
     };
   }
@@ -1770,7 +2108,12 @@ function assembleData(rows, activities){
     ctl:                 t.ctl,
     atl:                 t.atl,
     tsb:                 t.tsb,
-    recoveryScore:       t.score
+    recoveryScore:       t.score,
+    morningScore:        t.morning,
+    activityLoad:        t.load,
+    activityDelta:       t.actDelta,
+    activityParts:       t.parts,
+    acts:                t.acts || []
   };
 
   var endD = parseYmd(endKey);
@@ -2775,6 +3118,7 @@ function showTab(tab){
   if (ni) ni.classList.add('active');
 
   if (tab === 'calendar') renderCalendar();
+  if (tab === 'evo')      renderEvo();
   if (tab === 'report')   renderReport();
   if (tab === 'log')      renderLogHistory();
   if (tab === 'settings') renderSettings();
@@ -2982,6 +3326,23 @@ function buildInsights(){
       body:'Has apuntado molestias en: ' + esc(S.logs[0].pains.join(', ')) + '. Val&#237;dalas antes de cargar.' });
   }
 
+  /* Sesiones de hoy entran en el c&#225;lculo: se explican en conclusiones */
+  if (t.acts && t.acts.length && t.activityLoad > 0) {
+    var nAct = t.acts.length;
+    var adR  = Math.round(t.activityDelta * 10) / 10;
+    if (t.activityDelta < 0) {
+      out.push({ type:'warn', icon:'&#127939;', title:'Hoy ya has entrenado',
+        body: nAct + (nAct === 1 ? ' sesi&#243;n' : ' sesiones') +
+              ' con una carga de ' + t.activityLoad + ' puntos. Resta ' + Math.abs(adR) +
+              ' a tu &#237;ndice: tenlo en cuenta antes de encadenar otra.' });
+    } else if (t.activityDelta > 0) {
+      out.push({ type:'good', icon:'&#128694;', title:'D&#237;a activo',
+        body: nAct + (nAct === 1 ? ' sesi&#243;n ligera' : ' sesiones ligeras') +
+              ' (carga ' + t.activityLoad + '). Moverse ayuda a recuperar: +' + adR +
+              ' a tu &#237;ndice.' });
+    }
+  }
+
   if (!out.length) {
     out.push({ type:'good', icon:'&#9989;', title:'Todo en orden',
       body:'M&#233;tricas dentro de rango normal. Puedes entrenar con tranquilidad.' });
@@ -2994,6 +3355,259 @@ function fatigueEmoji(v){
 }
 function moodEmoji(v){
   return ['','&#128548;','&#128543;','&#128528;','&#128522;','&#129321;'][v] || '';
+}
+
+/* ---------- 10b. EVOLUCI&#212;N INTRAD&#205;A ---------- */
+/* Se asume que la jornada empieza a las EVO_WAKE y termina a las EVO_BED: la
+   app no conoce tu hora real de levantarse. */
+var EVO_WAKE = 7, EVO_BED = 23;
+
+/* Descenso natural: r&#225;pido por la ma&#241;ana, meseta por la tarde y baj&#243;n despu&#233;s de comer */
+function baseEnergy(h, wake, bed, morning){
+  if (h <= wake) return morning;
+  var span = Math.max(1, bed - wake);
+  var p = clamp((h - wake) / span, 0, 1);
+  var e = morning - morning * (0.40 * p + 0.10 * p * p);
+  e -= 5 * Math.exp(-Math.pow((h - 14.5) / 1.5, 2));
+  return e;
+}
+
+/* Lo que cuesta cada sesi&#243;n: cae r&#225;pido al empezar y se recupera el 65 %
+   en las horas siguientes (el 35 % se queda hasta el final del d&#237;a). */
+function energyAt(h, wake, bed, morning, acts){
+  var e = baseEnergy(h, wake, bed, morning), i;
+  if (acts) {
+    for (i = 0; i < acts.length; i++) {
+      var ah = actHour(acts[i]);
+      if (ah === null || h < ah) continue;
+      var L = actLoad(acts[i]);
+      if (L <= 0) continue;
+      var imp = (L < 15) ? 2 : Math.min(18, L * 0.18);
+      var dt = h - ah;
+      var w = dt < 0.2 ? (dt / 0.2) : (0.35 + 0.65 * Math.exp(-(dt - 0.2) / 2.5));
+      e -= imp * w;
+    }
+  }
+  return clamp(round1(e), 0, 100);
+}
+
+function evoChart(nowH, wake, bed, morning, acts){
+  var W = 340, H = 176, pl = 26, pr = 8, pt = 20, pb = 24;
+  var span = Math.max(1, bed - wake);
+  var nh = clamp(nowH, wake, bed);
+
+  function X(h){ return pl + (h - wake) / span * (W - pl - pr); }
+  function Y(e){ return pt + (1 - e / 100) * (H - pt - pb); }
+  function lineOf(arr){
+    var s = '', j;
+    for (j = 0; j < arr.length; j++) {
+      s += (j ? 'L' : 'M') + X(arr[j][0]).toFixed(1) + ' ' + Y(arr[j][1]).toFixed(1) + ' ';
+    }
+    return s;
+  }
+
+  var N = Math.round(span * 4), i, h, past = [], future = [];
+  for (i = 0; i <= N; i++) {
+    h = wake + i * 0.25;
+    if (h > bed) h = bed;
+    var e = energyAt(h, wake, bed, morning, acts);
+    if (h <= nh) past.push([h, e]);
+    future.push([h, e]);
+  }
+  if (past.length && future.length) future.unshift(past[past.length - 1]);
+
+  /* rejilla */
+  var grid = '', v, gv = [100, 75, 50, 25, 0];
+  for (i = 0; i < gv.length; i++) {
+    grid += '<line x1="' + pl + '" y1="' + Y(gv[i]).toFixed(1) + '" x2="' + (W - pr) +
+            '" y2="' + Y(gv[i]).toFixed(1) + '" stroke="rgba(255,255,255,.06)" stroke-width="1"></line>';
+  }
+  var ylab = [100, 50, 0];
+  for (i = 0; i < ylab.length; i++) {
+    v = ylab[i];
+    grid += '<text x="3" y="' + (Y(v) + 3).toFixed(1) + '" font-size="8.5" ' +
+            'fill="rgba(240,240,248,.35)">' + v + '</text>';
+  }
+
+  /* eje de horas: paso fijo de 4 h desde la salida */
+  var xl = [wake, wake + 4, wake + 8, wake + 12, bed], seen = {}, xlab = '';
+  for (i = 0; i < xl.length; i++) {
+    h = xl[i];
+    if (h > bed) continue;
+    if (seen[h]) continue;
+    seen[h] = 1;
+    xlab += '<text x="' + X(h).toFixed(1) + '" y="' + (H - 7) + '" font-size="8.5" ' +
+            'text-anchor="middle" fill="rgba(240,240,248,.35)">' + h + 'h</text>';
+  }
+
+  /* sesiones marcadas en la curva */
+  var marks = '', info;
+  if (acts) {
+    for (i = 0; i < acts.length; i++) {
+      var ah = actHour(acts[i]);
+      if (ah === null || ah < wake || ah > bed) continue;
+      info = actInfo(acts[i]);
+      var mx = X(ah), my = Y(energyAt(ah, wake, bed, morning, acts));
+      marks += '<line x1="' + mx.toFixed(1) + '" y1="' + pt + '" x2="' + mx.toFixed(1) +
+               '" y2="' + (H - pb) + '" stroke="rgba(167,139,250,.3)" stroke-width="1" ' +
+               'stroke-dasharray="2 3"></line>' +
+               '<circle cx="' + mx.toFixed(1) + '" cy="' + my.toFixed(1) + '" r="4" ' +
+               'fill="#a78bfa" stroke="#0a0a0f" stroke-width="1.5"></circle>' +
+               '<text x="' + mx.toFixed(1) + '" y="' + (pt - 6) + '" font-size="10" ' +
+               'text-anchor="middle">' + info.icon + '</text>';
+    }
+  }
+
+  /* tramos */
+  var area = '', solid = '', dash = '';
+  if (past.length > 1) {
+    area = 'M' + X(past[0][0]).toFixed(1) + ' ' + (H - pb) + ' L' + lineOf(past).slice(1) +
+           'L' + X(past[past.length - 1][0]).toFixed(1) + ' ' + (H - pb) + ' Z';
+    solid = lineOf(past);
+  }
+  if (future.length > 1) dash = lineOf(future);
+
+  /* punto de ahora */
+  var nowDot = '';
+  if (nowH >= wake && nowH <= bed) {
+    var nx = X(nh), ny = Y(energyAt(nh, wake, bed, morning, acts));
+    nowDot = '<line x1="' + nx.toFixed(1) + '" y1="' + pt + '" x2="' + nx.toFixed(1) +
+             '" y2="' + (H - pb) + '" stroke="rgba(255,255,255,.4)" stroke-width="1"></line>' +
+             '<circle cx="' + nx.toFixed(1) + '" cy="' + ny.toFixed(1) + '" r="5.5" fill="' +
+             scoreColorHex(energyAt(nh, wake, bed, morning, acts)) + '" stroke="#0a0a0f" stroke-width="2"></circle>';
+  }
+
+  return '<svg class="evo-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+           'aria-label="Evoluci&#243;n de la energ&#237;a a lo largo del d&#237;a">' +
+           '<defs><linearGradient id="evoFill" x1="0" y1="0" x2="0" y2="1">' +
+             '<stop offset="0%" stop-color="#6c63ff" stop-opacity=".34"></stop>' +
+             '<stop offset="100%" stop-color="#6c63ff" stop-opacity="0"></stop>' +
+           '</linearGradient></defs>' +
+           grid +
+           (area ? '<path d="' + area + '" fill="url(#evoFill)"></path>' : '') +
+           (dash ? '<path d="' + dash + '" fill="none" stroke="#a78bfa" stroke-width="2" ' +
+                   'stroke-dasharray="4 4" stroke-linecap="round" opacity=".55"></path>' : '') +
+           (solid ? '<path d="' + solid + '" fill="none" stroke="#a78bfa" stroke-width="2.4" ' +
+                    'stroke-linejoin="round" stroke-linecap="round"></path>' : '') +
+           marks + nowDot + xlab +
+         '</svg>';
+}
+
+function renderEvo(){
+  if (!S.data) return;
+  var t = S.data.today, dm = S.data.dailyMap, i;
+
+  var now = new Date();
+  var nowH = now.getHours() + now.getMinutes() / 60;
+  var wake = EVO_WAKE, bed = EVO_BED;
+  var morning = (t.morningScore === null || t.morningScore === undefined)
+                  ? t.recoveryScore : t.morningScore;
+  var atNow = energyAt(clamp(nowH, wake, bed), wake, bed, morning, t.acts);
+
+  /* --- cabecera + curva --- */
+  var hero = $('evo-hero');
+  if (hero) {
+    hero.innerHTML =
+      '<div class="evo-head">' +
+        '<div>' +
+          '<div class="evo-big" style="color:' + scoreColorHex(atNow) + '">' + atNow + '</div>' +
+          '<div class="evo-cap">Energ&#237;a ahora</div>' +
+        '</div>' +
+        '<div class="evo-when">' +
+          '<div>&#205;ndice de recuperaci&#243;n <b>' + t.recoveryScore + '</b></div>' +
+          '<div>Al despertar <b>' + morning + '</b></div>' +
+          '<div>Por la sesi&#243;n <b class="evo-delta ' +
+            (t.activityDelta > 0 ? 'up' : (t.activityDelta < 0 ? 'down' : 'flat')) + '">' +
+            (t.activityDelta > 0 ? '+' : '') + round1(t.activityDelta) + '</b></div>' +
+        '</div>' +
+      '</div>' +
+      evoChart(nowH, wake, bed, morning, t.acts) +
+      '<div class="evo-legend">' +
+        '<span><i style="background:#a78bfa"></i>Energ&#237;a</span>' +
+        '<span><i style="background:#a78bfa; opacity:.55"></i>Proyecci&#243;n</span>' +
+        '<span><i style="background:#0a0a0f; border:1px solid rgba(255,255,255,.4)"></i>Ahora</span>' +
+      '</div>';
+  }
+
+  /* --- sesiones de hoy --- */
+  var actsBox = $('evo-acts'), ah = '';
+  if (t.acts && t.acts.length) {
+    for (i = 0; i < t.acts.length; i++) {
+      var info = actInfo(t.acts[i]);
+      ah += '<div class="act-row">' +
+              '<div class="act-ico">' + info.icon + '</div>' +
+              '<div class="act-main"><b>' + esc(info.name) + '</b>' +
+                '<span>' + (info.at ? info.at + ' &#183; ' : '') +
+                (info.mins ? info.mins + ' min' : 'Sin duraci&#243;n') + '</span></div>' +
+              '<div class="act-load">' + info.load + '<small>carga</small></div>' +
+            '</div>';
+    }
+    ah += '<div class="scores-list">' +
+            '<div class="score-row"><span>Carga total de hoy</span><b>' + t.activityLoad + '</b></div>' +
+            '<div class="score-row"><span>Impacto en tu &#237;ndice</span>' +
+              '<b class="' + (t.activityDelta < 0 ? 'neg' : 'pos') + '">' +
+              (t.activityDelta > 0 ? '+' : '') + round1(t.activityDelta) + ' pts</b></div>' +
+          '</div>';
+  } else {
+    ah = '<div class="empty-note">Sin sesiones registradas hoy.<br>' +
+         'Todo lo que registre tu fuente &#8212; caminar incluido &#8212; aparecer&#225; aqu&#237; ' +
+         'y entrar&#225; en el c&#225;lculo.</div>';
+  }
+  if (actsBox) actsBox.innerHTML = ah;
+
+  /* --- desglose del &#237;ndice --- */
+  var partsBox = $('evo-parts'), ph = '';
+  var parts = t.activityParts || [];
+  if (parts.length) {
+    ph = '<div class="scores-list">';
+    for (i = 0; i < parts.length; i++) {
+      var d = Math.round(parts[i].delta * 10) / 10;
+      ph += '<div class="score-row"><span>' + parts[i].label + '</span>' +
+            '<b class="' + (d > 0 ? 'pos' : (d < 0 ? 'neg' : '')) + '">' +
+            (d > 0 ? '+' : '') + d + '</b></div>';
+    }
+    ph += '<div class="score-row total"><span>&#205;ndice de hoy</span><b>' +
+          t.recoveryScore + '</b></div></div>';
+  } else {
+    ph = '<div class="empty-note">Sin m&#233;tricas suficientes para desglosar el &#237;ndice.</div>';
+  }
+  if (partsBox) partsBox.innerHTML = ph;
+
+  /* --- carga de los &#250;ltimos 7 d&#237;as --- */
+  var weekBox = $('evo-week'), wh = '';
+  var keys = [], loads = [], maxL = 1, total7 = 0;
+  var anchor = parseYmd(t.date);
+  for (i = 6; i >= 0; i--) {
+    var k = ymd(shiftDays(anchor, -i));
+    var L = dm[k] ? (dm[k].load || 0) : 0;
+    keys.push(k); loads.push(L); total7 += L;
+    if (L > maxL) maxL = L;
+  }
+  if (!total7) {
+    wh = '<div class="empty-note">Sin sesiones en los &#250;ltimos 7 d&#237;as.</div>';
+  } else {
+    wh = '<div class="scores-list" style="padding-bottom:10px"><div class="load-days">';
+    for (i = 6; i >= 0; i--) {
+      var hh = loads[i] ? Math.max(5, Math.round(loads[i] / maxL * 54)) : 4;
+      wh += '<div class="load-col">' +
+              '<div class="load-num">' + (loads[i] || '') + '</div>' +
+              '<div class="load-bar' + (loads[i] ? '' : ' empty') + '" style="height:' + hh + 'px"></div>' +
+              '<div class="load-day' + (i === 0 ? ' today' : '') + '">' +
+                DOW_LETTER[parseYmd(keys[i]).getDay()] + '</div>' +
+            '</div>';
+    }
+    wh += '</div></div>';
+  }
+  if (weekBox) weekBox.innerHTML = wh;
+
+  if ($('evo-note')) {
+    $('evo-note').innerHTML =
+      'Curva estimada: parte de tu &#237;ndice al despertar (sue&#241;o, HRV, FC y TSB), ' +
+      'le resta el desgaste natural de la jornada y lo que cuesta cada sesi&#243;n. ' +
+      'RecoveryIQ no mide la energ&#237;a en vivo &#8212; &#250;salo como gu&#237;a. ' +
+      'Se asume que te levantas a las ' + EVO_WAKE + ':00 y que el d&#237;a acaba a las ' +
+      EVO_BED + ':00.';
+  }
 }
 
 /* ---------- 11. CALENDARIO ---------- */
@@ -3629,6 +4243,7 @@ function ensureWelcome(){
 /* ---------- 16. CICLO DE VIDA ---------- */
 function renderAll(){
   renderDashboard();
+  renderEvo();
   renderCalendar();
   renderReport();
   renderLogHistory();

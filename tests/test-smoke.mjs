@@ -259,6 +259,87 @@ run('resetLogForm(); saveLog();');
 logs = JSON.parse(w.localStorage.getItem('riq_logs'));
 eq(logs.length, 1, 'form vacío → no guarda nada');
 
+console.log('\n== Sesiones del día dentro del índice ==');
+eq(run('sportKey({type:"Ride"})'), 'ciclismo', 'Ride (Intervals) → ciclismo');
+eq(run('sportKey({type:"cycling"})'), 'ciclismo', 'cycling (Garmin) → ciclismo');
+eq(run('sportKey({type:"walking"})'), 'caminata', 'walking → caminata');
+eq(run('sportKey({name:"Paseo por el parque"})'), 'caminata', 'nombre libre en español → caminata');
+eq(run('sportKey({type:"whatever"})'), 'otro', 'tipo desconocido → otro');
+
+eq(run('actMinutes({duration:3600})'), 60, '3600 s → 60 min');
+eq(run('actMinutes({moving_time:1800})'), 30, '1800 s → 30 min');
+eq(run('actMinutes({})'), 0, 'sin duración → 0');
+
+eq(run('actLoad({type:"cycling", duration:3600})'), 39, '1 h de bici sin TSS → 39');
+eq(run('actLoad({type:"walking", duration:3600})'), 12, '1 h caminando → 12');
+eq(run('actLoad({type:"running", duration:3600, icu_training_load:85})'), 85,
+   'cuando hay TSS, manda el TSS');
+eq(run('actLoad({})'), 0, 'actividad sin datos → carga 0');
+
+eq(run('actDayKey({start_date_local:"2026-03-04 08:00:00"})'), '2026-03-04',
+   'día local de Garmin sin depender del huso');
+eq(run('actDayKey({start_date:"2026-03-04T07:00:00Z"})'), '2026-03-04', 'día de Intervals');
+eq(run('actHour({start_date_local:"2026-03-04 08:30:00"})'), 8.5, 'hora local sin huso');
+eq(run('Object.keys(groupActivities([{start_date_local:"2026-03-04 08:00:00"},' +
+                        '{start_date_local:"2026-03-04 18:00:00"},' +
+                        '{start_date_local:"2026-03-05 08:00:00"}])).length'), 2,
+   'agrupa por día');
+
+const ROW = '{id:"hoy",hrv:64,restingHR:52,sleep:7.5,ctl:68,atl:72}';
+const HARD = '[{type:"running",duration:5400,start_date_local:"2026-01-01 09:00:00"}]';
+const WALK = '[{type:"walking",duration:3600,start_date_local:"2026-01-01 10:00:00"}]';
+
+eq(run('calcScore(' + ROW + ')'), 78, 'mismo día sin sesión → sigue dando 78');
+eq(run('calcScore(' + ROW + ', ' + HARD + ')'), 65, '90 min de carrera → 65');
+eq(run('calcScore(' + ROW + ', ' + WALK + ')'), 81, '1 h caminando sube el índice');
+eq(run('scoreParts(' + ROW + ').parts.length'), 4, 'sin sesión: 4 componentes');
+eq(run('scoreParts(' + ROW + ', ' + HARD + ').load'), 81, 'carga del día = 81');
+eq(run('scoreParts(' + ROW + ', ' + HARD + ').actDelta'), -13,
+   'sesión dura con HRV por encima de la base → −13');
+eq(run('scoreParts(' + ROW + ', ' + WALK + ').actDelta'), 3, 'paseo → +3');
+eq(run('scoreParts(null).score'), 0, 'scoreParts(null) → 0');
+ok(run('scoreParts(' + ROW + ', ' + HARD + ').parts[4].label') === 'Actividad de hoy',
+   'el desglose explica la actividad', run('scoreParts(' + ROW + ', ' + HARD + ').parts[4].label'));
+
+console.log('\n== Curva de energía intradía ==');
+eq(run('energyAt(7, 7, 23, 78, [])'), 78, 'a la hora de levantarse = índice al despertar');
+ok(run('energyAt(20, 7, 23, 78, [])') < 78, 'baja a lo largo del día',
+   run('energyAt(20, 7, 23, 78, [])'));
+ok(run('energyAt(12, 7, 23, 78, ' + HARD + ')') < run('energyAt(12, 7, 23, 78, [])'),
+   'la sesión hace bajar la curva');
+const eClamped = run('energyAt(14, 7, 23, 10, [])');
+ok(eClamped >= 0 && eClamped <= 100, 'curva acotada a 0–100', eClamped);
+eq(run('energyAt(9, 7, 23, 78, ' + HARD + ')'), run('energyAt(9, 7, 23, 78, [])'),
+   'la sesión no afecta antes de empezar');
+eq(run('S.data.today.activityLoad'), 0, 'el demo no tiene sesiones');
+eq(run('S.data.today.morningScore'), 78, 'en el demo, despertar = índice');
+
+console.log('\n== Pestaña Evolución ==');
+run('showTab("evo")');
+eq($('tab-evo').classList.contains('active'), true, 'tab-evo activo');
+eq(!!w.document.querySelector('.nav-item[data-tab="evo"]'), true,
+   'la pestaña está en la barra inferior');
+eq($('evo-hero').querySelectorAll('svg').length, 1, 'la curva se pinta como SVG');
+eq($('evo-parts').querySelectorAll('.score-row').length, 5,
+   'desglose: 4 componentes + total', $('evo-parts').children.length);
+ok($('evo-acts').textContent.indexOf('Sin sesiones registradas hoy') >= 0,
+   'sin sesiones, lo dice', $('evo-acts').textContent.slice(0, 40));
+ok($('evo-week').textContent.indexOf('Sin sesiones') >= 0, 'y también en la carga semanal');
+ok($('evo-note').textContent.indexOf('no mide') >= 0,
+   'advierte de que la curva es una estimación');
+ok($('evo-hero').textContent.indexOf('78') >= 0, 'muestra el índice al despertar');
+
+console.log('\n== assembleData cruza sesiones y wellness ==');
+run('window.__keep = [avgHRV, avgHR, avgSleep];');
+ok(run('(function(){var rows=[{id:todayKey(),hrv:64,restingHR:52,sleep:7.5,ctl:68,atl:72}];' +
+       'var acts=[{type:"running",duration:5400,start_date_local:todayKey()+" 09:00:00"},' +
+       '{type:"walking",duration:1800,start_date_local:todayKey()+" 19:00:00"}];' +
+       'var d=assembleData(rows,acts);' +
+       'return d.today.acts.length===2 && d.today.activityLoad>0 && d.today.recoveryScore<78;' +
+      '})()'), true, 'las sesiones de hoy entran en today');
+run('avgHRV = window.__keep[0]; avgHR = window.__keep[1]; avgSleep = window.__keep[2]; ' +
+    'delete window.__keep;');
+
 console.log('\n== Errores JS al final ==');
 ok(!$('js-err') || !$('js-err').classList.contains('show'), 'ningún error JS',
    $('js-err') && $('js-err').textContent);

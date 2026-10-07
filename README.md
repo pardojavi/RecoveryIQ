@@ -401,11 +401,12 @@ Recomendaciones:
 
 ## 6. Estructura de la app
 
-Cinco pestañas en la barra inferior + Ajustes (desde el ⚙️ de arriba):
+Seis pestañas en la barra inferior + Ajustes (desde el ⚙️ de arriba):
 
 | Pestaña | Contenido |
 |---|---|
-| 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas (y **Peso** a ancho completo cuando hay dato), conclusiones automáticas. Los cuadros de **Sueño y Peso son clicables** y abren su detalle |
+| 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas (y **Peso** a ancho completo cuando hay dato), conclusiones automáticas. Los cuadros de **Sueño y Peso son clicables** y abren su detalle. Si hoy hay sesión, una conclusión la explica |
+| 📈 **Evolución** | Cómo cae tu energía a lo largo del día: curva desde que te levantas hasta que te acuestas con las sesiones marcadas, lista de las sesiones de hoy con su carga, **desglose del índice** y carga de los últimos 7 días |
 | 📅 **Calendario** | Mes completo coloreado por score, detalle por día (wellness + registro subjetivo) |
 | 🏁 **Informe** | Veredicto (🟢🟡🟠🔴), barras HRV/sueño/global, **estado de forma y rendimiento** (índice 0–100, CTL/ATL/TSB, ratio, narrativa), recomendaciones por rango |
 | 🤖 **IA** | Chat con Claude, 5 preguntas rápidas, system prompt con tus datos del día (incluidas las fases del sueño) |
@@ -472,9 +473,54 @@ Base neutral de **50**, ajustada por:
 | FC en reposo vs media | hasta **+15** (más baja = mejor) |
 | Sueño 7–9 h / ≥6 h / <6 h | **+10 / +4 / −8** |
 | TSB = CTL − ATL | hasta **±10** (×0,5) |
+| Sesiones del día | **−18 … +3** (ver abajo) |
 
 Resultado recortado a 0–100 y redondeado. Colores: **≥80 verde** (Excelente),
 **≥65 azul** (Buena), **≥50 amarillo** (Moderada), **<50 rojo** (Baja).
+
+#### Las sesiones del día entran en el cálculo
+
+El índice no mira solo la madrugada: **cuenta con lo que has hecho hoy**, en el
+deporte que sea (caminar incluido). Todo pasa por tres pasos:
+
+1. **Formato común.** Intervals.icu manda `type: "Ride"` con
+   `icu_training_load` (TSS); Garmin manda `typeKey: "cycling"` con `duration`
+   en segundos. `sportKey()`, `actMinutes()` y `actLoad()` las reducen a
+   *deporte + duración + carga*. Si hay TSS, manda el TSS; si no, se estima como
+   `minutos × factor del deporte` (caminar 0,2 · bici 0,65 · correr 0,9 · HIIT
+   0,95). El deporte se reconoce por clave o, en su defecto, por palabras del
+   nombre («paseo» → caminata).
+2. **Cruce por día.** `groupActivities()` agrupa por fecha **leyéndola del
+   texto** para no depender del huso horario del navegador, y `assembleData()`
+   se la pasa a `scoreParts()` para cada fila de wellness.
+3. **Efecto acotado**, cruzado con la HRV:
+   - carga **< 15** (un paseo) → **+3**: moverse es recuperación activa;
+   - carga **≥ 15** → **−16 × 0,22** de base, con techo de −18;
+   - si la HRV está **≥ 5 % por encima** de tu base → **+3** (aguantas la carga);
+   - si está **≤ −8 % por debajo** y la carga es ≥ 35 → **−3** más (señal mala).
+
+`scoreParts()` devuelve además el desglose, que es lo que muestra la pestaña
+**Evolución**: cada componente con su aportación y el total.
+
+#### Pestaña Evolución: la energía a lo largo del día
+
+`energyAt()` dibuja tres cosas encima de la misma curva:
+
+- **Descenso natural** (`baseEnergy`): rápido por la mañana, meseta por la tarde
+  y un bajón post-comida sobre las 14:30.
+- **Lo que cuesta cada sesión**: cae al empezar y recupera el 65 % en las horas
+  siguientes, dejando el 35 % hasta el final del día. Varias sesiones se acumulan.
+- **Marcadores**: la sesión aparece con su icono y su hora sobre la curva, y un
+  punto marca a qué hora estás leyéndolo.
+
+La cabecera separa los dos números para no confundirlos: **energía ahora**
+(eso que baja durante el día) e **índice de recuperación** (el de Inicio, que sí
+incluye la sesión de hoy). La curva se pinta en SVG con el tramo ya vivido en
+continuo y el resto en discontinua, y el pie de nota dice explícitamente que es
+una **estimación, no un dato del dispositivo**.
+
+> **Se asume que te levantas a las 07:00** y que el día acaba a las 23:00: la app
+> no conoce tu hora real de levantarse (`EVO_WAKE` / `EVO_BED`).
 
 ---
 
@@ -513,17 +559,17 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 
 ## 9. Verificación
 
-Dos suites de jsdom sobre `recovery-app.html` (**317 aserciones, 0 fallos**,
+Dos suites de jsdom sobre `recovery-app.html` (**363 aserciones, 0 fallos**,
 0 errores en tiempo de ejecución). Están en `tests/` (`npm install` y
 `node test-smoke.mjs` / `node test-garmin.mjs`).
 
-### `test-smoke.mjs` — 124 aserciones
+### `test-smoke.mjs` — 167 aserciones
 
 - Arranque, modo demo, credenciales y auto-restauración de sesión.
 - Valores exactos de los datos demo de la spec (78/100, HRV 64, baseline 58,
   +10,3 %, FC 52/55, −5,5 %, sueño 7,5 h, +1 h, CTL 68, ATL 72, TSB −4, 28 días).
 - Render del dashboard (círculo, 4 tarjetas, semana, conclusiones).
-- Navegación por las 5 pestañas + Ajustes (un solo tab activo a la vez).
+- Navegación por las 6 pestañas + Ajustes (un solo tab activo a la vez).
 - Calendario: recuento exacto de días con datos del mes, navegación entre meses
   y detalle de día (con `scrollIntoView` protegido).
 - Informe: veredicto 78 → 🟡 PUEDE ENTRENAR y la sección **Estado de forma y
@@ -537,8 +583,16 @@ Dos suites de jsdom sobre `recovery-app.html` (**317 aserciones, 0 fallos**,
   Anthropic (nunca empieza por `assistant`).
 - Límites de `calcScore` (0–100), umbrales de `scoreColor`/`scoreLabel`/
   `verdictFor` y normalización `sleepSecs`/`sleep`.
+- **Sesiones del día**: reconocimiento de deporte (Intervals y Garmin),
+  duración, carga con y sin TSS, agrupación por día sin depender del huso
+  horario, efecto sobre el índice (carrera 90 min → 65, paseo 1 h → 81) y su
+  sitio en el desglose.
+- **Curva de energía**: empieza en el índice al despertar, baja con la jornada,
+  la sesión la hunde, se mantiene acotada a 0–100 y no actúa antes de su hora.
+- **Pestaña Evolución**: SVG de la curva, desglose con sus filas, avisos cuando
+  no hay sesiones y nota de que es una estimación.
 
-### `test-garmin.mjs` — 193 aserciones
+### `test-garmin.mjs` — 196 aserciones
 
 - **Normalizador `garminToRows()`**: 60 filas, HRV, FC en reposo, sueño en horas
   con 1 decimal, y las 4 fases reales sumando exactamente el total.
