@@ -1128,7 +1128,12 @@ button{border:0; background:none; cursor:pointer; padding:0;}
           Tu contrase&#241;a no se guarda; solo se conserva una sesi&#243;n en este dispositivo.
         </div>
 
-        <button type="button" class="link-alt" id="btn-tp-alt">&#191;No te deja entrar? Usa la cookie en su lugar</button>
+        <div class="hint" style="text-align:center; margin-top:8px; line-height:1.55;">
+          <b>&#191;Entras a TrainingPeaks con Google o Apple?</b> Entonces no hay
+          contrase&#241;a local: usa directamente la cookie de abajo.
+        </div>
+
+        <button type="button" class="link-alt" id="btn-tp-alt">Usar la cookie <code>Production_tpAuth</code> en su lugar</button>
 
         <div class="field" id="field-tp-cookie" style="display:none">
           <label class="field-label" for="inp-tp-cookie">Cookie <code>Production_tpAuth</code></label>
@@ -2121,6 +2126,7 @@ function tpPost(payload){
       if (!res.ok || !j || j.ok === false) {
         var e = new Error((j && j.error) ? j.error : ('TrainingPeaks devolvi&#243; HTTP ' + res.status + '.'));
         e.gCode = (j && j.code) || '';
+        e.detail = (j && j.detail) || '';   // detalle técnico del worker
         throw e;
       }
       return j;
@@ -2988,7 +2994,10 @@ function friendlyError(e){
   if (code === 'TP_BAD_CREDENTIALS') {
     return 'Email o contrase&#241;a de <b>TrainingPeaks</b> incorrectos.<br><br>' +
            'Usa exactamente los mismos datos con los que entras en ' +
-           '<b>app.trainingpeaks.com</b>.';
+           '<b>app.trainingpeaks.com</b>.<br><br>' +
+           '<b>&#191;Entras con Google, Apple o un club?</b> Entonces no existe una ' +
+           'contrase&#241;a local: usa la cookie <code>Production_tpAuth</code> (abajo, ' +
+           'en el formulario).';
   }
   if (code === 'TP_BLOCKED') {
     return 'TrainingPeaks ha exigido una comprobaci&#243;n extra (captcha o ' +
@@ -2997,6 +3006,13 @@ function friendlyError(e){
            'Abre <b>app.trainingpeaks.com</b> en el ordenador, abre las herramientas de ' +
            'desarrollador (F12) &#8594; Application &#8594; Cookies &#8594; copia el valor de ' +
            '<code>Production_tpAuth</code> y p&#233;galo en el formulario.';
+  }
+  if (code === 'TP_LOGIN_FAILED') {
+    return 'TrainingPeaks no ha aceptado el inicio de sesi&#243;n.<br><br>' +
+           'Puede ser una cuenta que entra con Google/Apple (sin contrase&#241;a ' +
+           'local) o un cambio en su formulario. <b>Usa la cookie ' +
+           '<code>Production_tpAuth</code></b> en su lugar: F12 &#8594; Application &#8594; ' +
+           'Cookies &#8594; <code>Production_tpAuth</code>.';
   }
   if (code === 'TP_REAUTH') {
     return 'La sesi&#243;n con <b>TrainingPeaks</b> ha caducado.<br><br>Vuelve a conectar tu cuenta.';
@@ -4106,12 +4122,16 @@ function tpConnected(r, email){
 
 function tpConnectFailed(e){
   hideLoading();
-  if (e && e.gCode === 'TP_BLOCKED') showTpCookieField(true);
-  if (e && e.gCode === 'TP_REAUTH') {
-    S.tp = { cookie:'', refreshToken:'', accessToken:'', expires:0,
-             athleteId:'', email:'', displayName:'' };
+  if (e && (e.gCode === 'TP_BLOCKED' || e.gCode === 'TP_LOGIN_FAILED')) showTpCookieField(true);
+  if (e && e.gCode === 'TP_REAUTH') S.tp = tpBlank();
+  var msg = friendlyError(e);
+  // El worker devuelve el motivo exacto (HTTP + qué ha fallado): sin esto no se
+  // puede distinguir una contraseña mala de un captcha.
+  if (e && e.detail) {
+    msg += '<div class="hint" style="margin-top:12px; text-align:left;">Detalle: ' +
+           esc(e.detail) + '</div>';
   }
-  showErrorModal(friendlyError(e));
+  showErrorModal(msg);
 }
 
 function doConnectTp(){
