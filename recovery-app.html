@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Sin apple-mobile-web-app-status-bar-style: en modo standalone iOS desplaza toda la
+     vista ~59px con black-translucent y la altura del viewport queda mal medida, con lo
+     que la nav inferior se salía por debajo de la pantalla. Sin esa meta, iOS reserva la
+     barra de estado y gestiona los safe areas él solo (igual que en Safari, donde sí va
+     bien). Se mantiene viewport-fit=cover para el inset inferior del home indicator. -->
 <meta name="apple-mobile-web-app-title" content="RecoveryIQ">
 <meta name="theme-color" content="#0a0a0f">
 <title>RecoveryIQ</title>
@@ -65,7 +69,12 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 /* ---------- Screens ---------- */
 .screen{
   position:fixed;
-  inset:0;
+  top:0; left:0; right:0;
+  /* 100dvh = altura real de la ventana. Con inset:0 / 100vh la app instalada en iOS
+     medía la pantalla física completa y el final del contenedor caía fuera de la
+     pantalla, dejando los botones de la nav inferior intocables. */
+  height:100vh;
+  height:100dvh;
   display:none;
   flex-direction:column;
   background:var(--bg);
@@ -898,7 +907,7 @@ button{border:0; background:none; cursor:pointer; padding:0;}
    OVERLAYS
    ============================================================ */
 #loading{
-  position:fixed; inset:0;
+  position:fixed; top:0; left:0; right:0; height:100vh; height:100dvh;
   z-index:900;
   display:none;
   flex-direction:column;
@@ -955,7 +964,7 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 #js-err.show{display:block;}
 
 .sheet-overlay{
-  position:fixed; inset:0;
+  position:fixed; top:0; left:0; right:0; height:100vh; height:100dvh;
   z-index:940;
   background:rgba(0,0,0,.62);
   display:flex; align-items:flex-end; justify-content:center;
