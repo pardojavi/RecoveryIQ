@@ -18,8 +18,8 @@ recomendaciones diarias.
 | `proxy.php` | Proxy servidor-a-servidor para la API de Intervals.icu (evita CORS) |
 | `proxy-ai.php` | Proxy para la API de Claude/Anthropic (chat IA) |
 | `proxy-ai-config.example.php` | Plantilla: cópiala a `proxy-ai-config.php` y pon ahí tu key |
-| `worker.js` + `wrangler.toml` | Alternativa sin PHP (Cloudflare Workers): proxy de Intervals.icu, conexión con Garmin Connect (§4.5), con TrainingPeaks (§4.7) e IA |
-| `tests/` | Suites de jsdom: `test-smoke.mjs`, `test-garmin.mjs` y `test-tp.mjs` (§9) |
+| `worker.js` + `wrangler.toml` | Alternativa sin PHP (Cloudflare Workers): proxy de Intervals.icu, conexión con Garmin Connect (§4.5) e IA |
+| `tests/` | Suites de jsdom: `test-smoke.mjs` y `test-garmin.mjs` (§9) |
 | `apple-touch-icon.png` | Icono 180×180 que muestra iOS al añadir a pantalla de inicio |
 | `.gitignore` | Impide subir `.DS_Store` y las API keys a GitHub |
 
@@ -38,7 +38,6 @@ No hay build, ni npm, ni framework: se sube tal cual.
 | Instalar como PWA en el iPhone | ✅ Sí |
 | Conectar con tu cuenta de **Intervals.icu** | ✅ Sí, vía `worker.js` |
 | Conectar con tu cuenta de **Garmin Connect** | ✅ Sí, vía `worker.js` (§4.5) |
-| Conectar con tu cuenta de **TrainingPeaks** | ✅ Sí, vía `worker.js` (§4.7) |
 | Chat con **IA** | ✅ Sí, **gratis** con Workers AI (§4.4) |
 
 **Esta app ya está desplegada**: `MY_PROXY` apunta a
@@ -71,11 +70,10 @@ partir de `worker.js` de este repo.
 
 ## 3. Conectar tus datos
 
-La app tiene **tres vías de obtención de información**: Intervals.icu, Garmin
-Connect y TrainingPeaks. Eliges una en la pantalla de inicio (las pestañas de
-arriba) y puedes cambiar de una a otra cuando quieras haciendo **Cerrar sesión**
-y volviendo a conectar. Todas se reducen a las mismas `rows`, así que el resto de
-la app (score, calendario, informe, IA) no distingue de dónde vienen los datos.
+La app tiene **dos vías de obtención de información**: Intervals.icu y Garmin
+Connect. Eliges una en la pantalla de inicio (las pestañas de arriba) y puedes
+cambiar de una a otra cuando quieras haciendo **Cerrar sesión** y volviendo a
+conectar.
 
 ### 3.1 Intervals.icu
 
@@ -97,20 +95,6 @@ referencia y renderiza el dashboard.
 Requiere que `worker.js` esté desplegado (§4.3), porque el login de Garmin se
 hace en servidor: no puede hacerse desde el navegador. Ver **§4.5** para qué da
 y qué no da esta vía.
-
-### 3.3 TrainingPeaks
-
-1. En la app: pestaña **TrainingPeaks** → email y contraseña de tu cuenta
-   TrainingPeaks → **Conectar con TrainingPeaks**.
-2. Descarga los últimos 60 días de métricas diarias, PMC y entrenos.
-3. Si TrainingPeaks exige un captcha o verificación en dos pasos y no deja
-   entrar a la app, la propia pantalla te ofrece la alternativa **por cookie**:
-   copias el valor de `Production_tpAuth` desde el navegador de escritorio y lo
-   pegas (§4.7).
-
-Requiere `worker.js` desplegado (§4.3): `tpapi.trainingpeaks.com` solo contesta
-con CORS desde `app.trainingpeaks.com`, así que sin proxy no hay forma. Ver
-**§4.7**.
 
 ¿Aún no quieres conectar? Botón **«Probar con datos demo»**: 28 días de datos
 de ejemplo (HRV 64 ms, FC 52 bpm, sueño 7,5 h, TSB −4, índice **78/100**).
@@ -382,68 +366,6 @@ aislado: `garminToRows(g)` recibe un objeto con `hrv`, `rhr`, `sleep`, `load` y
 cambiar `garminSync()` del worker (o añadir un `action: 'sync_official'` con el
 token OAuth 2.0) para que la app ni se entere.
 
-### 4.7 Tercera vía: TrainingPeaks (la que implementa la app)
-
-**La API oficial de TrainingPeaks no está abierta a uso personal.** Es literal,
-de su centro de ayuda (<https://help.trainingpeaks.com/hc/en-us/articles/234441128-TrainingPeaks-API>,
-actualizado 2025‑05‑29):
-
-> *"The TrainingPeaks API is currently available for approved developers only…
-> At this time, **access to the API is not available for personal use**."*
-
-No hay registro abierto, ni API key en la configuración de la cuenta, ni
-`client_id` auto-servible: es OAuth 2.0 de código de autorización **para partners
-aprobados**. Así que se reproduce el mismo flujo que la propia app web, dentro
-del worker (§4.5 ya dejó el patrón):
-
-| Paso | Petición | Respuesta |
-|---|---|---|
-| 1 | `GET https://home.trainingpeaks.com/login` | HTML con `<input name="__RequestVerificationToken">` y cookie de sesión |
-| 2 | `POST https://home.trainingpeaks.com/login` (`application/x-www-form-urlencoded`: `Username`, `Password`, `__RequestVerificationToken`) | `Set-Cookie: Production_tpAuth=…` |
-| 3 | `GET https://tpapi.trainingpeaks.com/users/v3/token` con esa cookie | `{"success":true,"token":{"access_token","refresh_token","expires_in"}}` |
-| 4 | `GET https://tpapi.trainingpeaks.com/users/v3/user` con `Authorization: Bearer` | `personId`, `athletes[].athleteId`, nombre |
-
-**CORS:** comprobado el 2026‑10‑06. `tpapi.trainingpeaks.com` solo devuelve
-`access-control-allow-origin` cuando el `Origin` es `https://app.trainingpeaks.com`
-(con otro origen ni lo emite), así que **el worker es obligatorio** y también
-esconde la cookie del navegador. (`api.trainingpeaks.com`, el de la API oficial,
-sí está abierto… pero no sirve sin un partner token.)
-
-**Endpoints de datos** (base `https://tpapi.trainingpeaks.com`, todos con
-`Authorization: Bearer`, `Origin` y `Referer` de `app.trainingpeaks.com`):
-
-| Dato | Endpoint | Forma |
-|---|---|---|
-| Métricas diarias | `GET /metrics/v3/athletes/{id}/consolidatedtimedmetrics/{start}/{end}` | `[{timeStamp, details:[{type,value}]}]` con `type` **5** = Pulse (FC en reposo), **6** = sueño en horas, **9** = peso en kg, **60** = HRV |
-| **CTL / ATL / TSB** | `POST /fitness/v1/athletes/{id}/reporting/performancedata/{start}/{end}` con `{"atlConstant":7,"atlStart":0,"ctlConstant":42,"ctlStart":0,"workoutTypes":[]}` | `[{workoutDay, tssActual, ctl, atl, tsb}]` — **los calcula TrainingPeaks**, no hay que derivarlos de TSS |
-| Entrenos | `GET /fitness/v6/athletes/{id}/workouts/{start}/{end}` | `[{id, workoutDay, title, totalTime (horas decimales), distance (m), tssActual, completed, workoutTypeName}]` |
-
-Notas:
-
-- **Sueño**: solo el total (type 6). La API no expone las fases, así que la
-  hoja de detalle usa la estimación del reparto típico y lo dice (§6).
-- **Peso**: solo el type 9. Sin `% grasa` ni masa muscular (TrainingPeaks no
-  los publica por esta vía), así que la tarjeta **Peso** muestra el peso y la
-  hoja de detalle indica «Solo peso registrado».
-- `tpapi` limita la ventana a ~90 días por llamada; la app pide **60 días**.
-- `CTL/ATL` se redondean a entero para que las tres fuentes se lean igual.
-
-**Vía alternativa por cookie.** Si el login automático choca con un captcha o
-con verificación en dos pasos (el formulario de login de TP tiene campos
-`CaptchaHidden`, `CaptchaToken` y `SelectedMfaMethod`), la pantalla de
-conexión abre el campo **«Cookie `Production_tpAuth`»**: se copia desde el
-navegador de escritorio (F12 → Application → Cookies) y el worker la canjea por
-el mismo token. No hace falta la contraseña.
-
-**Códigos de error que la app traduce** (§`friendlyError`): `TP_BAD_CREDENTIALS`,
-`TP_BLOCKED` (captcha/2FA → sugiere la cookie), `TP_REAUTH` (sesión caducada),
-`RATE_LIMIT` y `NO_DATA_TP`.
-
-**Migración.** Nada de esto es oficial: si algún día te aprueban la API
-de partners, basta con sustituir `tpSync()` del worker por las llamadas a
-`api.trainingpeaks.com/v2/…` y devolver el mismo `{metrics, fitness, workouts}`;
-`tpToRows()` no cambiaría.
-
 ---
 
 ## 5. ⚠️ Seguridad — léelo
@@ -460,11 +382,9 @@ Recomendaciones:
 - **La API key de Anthropic NO se guarda en el repo**: va en
   `proxy-ai-config.php` (ignorado por git) o en una variable de entorno /
   secreto. `proxy-ai.php` y `worker.js` pueden subirse a GitHub sin riesgo.
-- `proxy.php` solo acepta URLs que empiezan por `https://intervals.icu/api/`
-  (validación estricta), así que no puede usarse como proxy abierto. En
-  `worker.js` pasa lo mismo: la ruta de Intervals valida el prefijo y las de
-  Garmin y TrainingPeaks tienen las URLs **fijas** en el código, sin ningún
-  destino parametrizable.
+- `proxy.php` y `worker.js` solo aceptan URLs que empiezan por
+  `https://intervals.icu/api/` (validación estricta), así que no pueden usarse
+  como proxy abierto.
 - Las credenciales del atleta se guardan en `localStorage` del propio dispositivo
   y se borran con **Cerrar sesión**.
 - **Garmin (§4.5)**: la contraseña **no se guarda** en ningún sitio; se usa una
@@ -473,11 +393,6 @@ Recomendaciones:
   Connect para revocarlo. La ruta `/garmin` del worker solo acepta tres
   acciones (`login`, `mfa`, `sync`) y valida el formato de fechas, así que no
   es un proxy abierto.
-- **TrainingPeaks (§4.7)**: igual — la contraseña se usa una sola vez en el
-  worker para obtener la cookie `Production_tpAuth`, y de ella solo se
-  persiste la cookie (o su `refresh_token`) en `localStorage`. La ruta
-  `/trainingpeaks` acepta únicamente `login`, `cookie` y `sync`, con las URLs
-  de TrainingPeaks fijas en el código.
 - Si usas Cloudflare Workers, protege la ruta `/ai` si no quieres que alguien
   gaste tus tokens: añade un `if (!request.headers.get('X-RecoveryIQ')) ...`
   o activa *Cloudflare Access*.
@@ -495,16 +410,14 @@ Cinco pestañas en la barra inferior + Ajustes (desde el ⚙️ de arriba):
 | 🏁 **Informe** | Veredicto (🟢🟡🟠🔴), barras HRV/sueño/global, **estado de forma y rendimiento** (índice 0–100, CTL/ATL/TSB, ratio, narrativa), recomendaciones por rango |
 | 🤖 **IA** | Chat con Claude, 5 preguntas rápidas, system prompt con tus datos del día (incluidas las fases del sueño) |
 | 📝 **Registrar** | Cansancio, ánimo, estrés, calidad de sueño, molestias, salud, notas |
-| ⚙️ **Ajustes** | Fuente activa (Intervals.icu / Garmin / TrainingPeaks), sincronizar, diagnóstico de la última sincronización, nº de registros, versión, cerrar sesión |
+| ⚙️ **Ajustes** | Fuente activa (Intervals.icu / Garmin), sincronizar, nº de registros, versión, cerrar sesión |
 
 #### Fuente de datos
 
-La pantalla de conexión tiene un selector con las **tres vías**: `Intervals.icu`
-(§3.1), `Garmin Connect` (§3.2) y `TrainingPeaks` (§3.3). Solo se persiste la
-sesión cuando la fuente acepta las credenciales. Para cambiar de fuente:
-**Ajustes → Cerrar sesión** y conectar con la otra. Ajustes muestra siempre
-cuál está activa — todos los rótulos visibles salen de `sourceName(src)`, así
-que añadir una cuarta vía es añadir una entrada al mapa `SOURCE_FORMS`.
+La pantalla de conexión tiene un selector con las **dos vías**: `Intervals.icu`
+y `Garmin Connect` (§4.5). Solo se persiste la sesión cuando la fuente acepta
+las credenciales. Para cambiar de fuente: **Ajustes → Cerrar sesión** y
+conectar con la otra. Ajustes muestra siempre cuál está activa.
 
 #### Detalle del sueño
 
@@ -600,12 +513,11 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 
 ## 9. Verificación
 
-Tres suites de jsdom sobre `recovery-app.html` (**434 aserciones, 0 fallos**,
+Dos suites de jsdom sobre `recovery-app.html` (**317 aserciones, 0 fallos**,
 0 errores en tiempo de ejecución). Están en `tests/` (`npm install` y
-`npm test`, o `node test-smoke.mjs` / `node test-garmin.mjs` /
-`node test-tp.mjs`).
+`node test-smoke.mjs` / `node test-garmin.mjs`).
 
-### `test-smoke.mjs` — 126 aserciones
+### `test-smoke.mjs` — 124 aserciones
 
 - Arranque, modo demo, credenciales y auto-restauración de sesión.
 - Valores exactos de los datos demo de la spec (78/100, HRV 64, baseline 58,
@@ -626,13 +538,13 @@ Tres suites de jsdom sobre `recovery-app.html` (**434 aserciones, 0 fallos**,
 - Límites de `calcScore` (0–100), umbrales de `scoreColor`/`scoreLabel`/
   `verdictFor` y normalización `sleepSecs`/`sleep`.
 
-### `test-garmin.mjs` — 196 aserciones
+### `test-garmin.mjs` — 193 aserciones
 
 - **Normalizador `garminToRows()`**: 60 filas, HRV, FC en reposo, sueño en horas
   con 1 decimal, y las 4 fases reales sumando exactamente el total.
 - **Peso y composición corporal** con la forma real de `weight/dateRange`:
   gramos → kg, `bodyFat`/`bodyWater` en 0–100, `isBodyWrap()` descartando
-  `totalAverage`, `anyDate()` con `calendarDate` o epoch en ms, media de la
+  `totalAverage`, `bodyDate()` con `calendarDate` o epoch en ms, media de la
   ventana como baseline y el día más antiguo conservando su propio registro.
 - UI de la tarjeta **Peso**: 5 tarjetas con `data-metric="weight"` a ancho
   completo, la hoja de detalle con desglose + gráfico de evolución, el peso en
@@ -653,30 +565,6 @@ Tres suites de jsdom sobre `recovery-app.html` (**434 aserciones, 0 fallos**,
 - Conexión completa: login, ida y vuelta de **MFA** (sin mandar la contraseña en
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
-
-### `test-tp.mjs` — 112 aserciones
-
-- La **3ª vía existe en la UI**: tercer botón, `SOURCE_FORMS.trainingpeaks`,
-  `#form-tp` y `sourceName()` para las tres fuentes.
-- `tpField()` traduce los `type` numéricos reales (5 Pulse, 6 sueño, 9 peso,
-  60 HRV) y también nombres literales.
-- **`tpToRows()`** con la forma real de `consolidatedtimedmetrics`: 60 filas,
-  HRV/FC/sueño/peso por día y los días sin `type 9` sin peso.
-- **CTL/ATL/TSB llegan ya calculados** de `performancedata` (60/65 → TSB −5).
-- `tpActivities()` convierte `totalTime` de horas decimales a segundos y
-  **descarta los entrenos aún planificados** (no pueden ser «la última actividad»).
-- `tpDiag()` con los conteos por señal (60/60/60, 20 con peso, 60 con PMC).
-- Errores amables `TP_BAD_CREDENTIALS`, `TP_BLOCKED` (sugiere la cookie),
-  `TP_REAUTH`, `RATE_LIMIT` y `NO_DATA_TP`.
-- Validación: sin email, sin contraseña o sin cookie **no se llama a la red**.
-- Conexión completa por contraseña y **por cookie pegada** (acción `cookie`
-  seguida de `sync`), borrado de credenciales del formulario y sesión en
-  `riq_config`.
-- Portada con los datos de la 3ª vía (HRV, FC, sueño, CTL/ATL/TSB, peso,
-  última actividad) y Ajustes titulando «Diagnóstico TrainingPeaks» con la
-  fila **PMC (CTL/ATL)**.
-- `saveConfig()` / `restoreSession()` / `doLogout()` de la 3ª vía y
-  `doSync()` sin credenciales guardadas.
 
 Además, `node --check` sobre el bloque `<script>` del HTML y sobre `worker.js`.
 
