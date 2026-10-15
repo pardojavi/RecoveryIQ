@@ -556,7 +556,8 @@ async function garminRefresh(refreshToken, clientId) {
   return { error: 'REFRESH_FAILED' };
 }
 
-/** Trae los 6 datos que necesita la app en 8 peticiones (límite free: 50). */
+/** Trae los 7 datos que necesita la app (5 + trozos de sueño + 14 días de
+ *  temperatura; límite del plan Free: 50 peticiones por invocación). */
 async function garminSync(body) {
   const start = String(body.start || '');
   const end = String(body.end || '');
@@ -591,6 +592,20 @@ async function garminSync(body) {
     String(body.displayName || '').trim();
 
   const sleepChunks = chunkRange(start, end, 28);
+
+  // Temperatura de la muñeca: NO viene en el endpoint de sueño por rango,
+  // hay que pedir día a día (dailySleepData) y solo para las últimas dos
+  // semanas, para no pasar del límite de 50 peticiones del plan gratuito.
+  const tempDays = [];
+  {
+    const first = new Date(start + 'T00:00:00Z');
+    let d = new Date(end + 'T00:00:00Z');
+    for (let i = 0; i < 14 && d >= first; i++) {
+      tempDays.push(ymdUTC(d));
+      d = new Date(d.getTime() - 86400000);
+    }
+  }
+
   const jobs = [
     get('/hrv-service/hrv/daily/' + start + '/' + end),
     get('/userstats-service/wellness/daily/' + encodeURIComponent(displayName) +
@@ -601,6 +616,7 @@ async function garminSync(body) {
         '&startDate=' + start + '&endDate=' + end),
     get('/weight-service/weight/dateRange?startDate=' + start + '&endDate=' + end),
     ...sleepChunks.map(([a, b]) => get('/sleep-service/stats/sleep/daily/' + a + '/' + b)),
+    ...tempDays.map(dt => get('/sleep-service/sleep/dailySleepData?date=' + dt)),
   ];
 
   let results;
@@ -716,6 +732,9 @@ async function garminSync(body) {
   const weight = await jsonOf(results[4], null);
   const sleep = [];
   for (let i = 0; i < sleepChunks.length; i++) sleep.push(await jsonOf(results[5 + i], null));
+  const TEMP0 = 5 + sleepChunks.length;   // índice del primer dailySleepData
+  const temp = [];
+  for (let i = 0; i < tempDays.length; i++) temp.push(await jsonOf(results[TEMP0 + i], null));
 
   // Si el endpoint por rango no ha traído NI UN día de sueño, se reintenta con
   // el endpoint de un solo día (el que usa python-garminconnect: get_sleep_data)
@@ -750,6 +769,16 @@ async function garminSync(body) {
   // Ajustes, para poder corregirlo sin adivinar.
   const statusOf = (i) => (results[i] && results[i].status) || 0;
   const weightRows = rowsOfWeight(weight);
+  // Temperatura de la muñeca: cuántos días traen desviación real y cómo ha ido
+  // el último dailySleepData (el de hoy, que es el que más tarda en llegar).
+  let tempRows = 0;
+  for (const x of temp) {
+    if (!x || typeof x !== 'object') continue;
+    const dv = (x.avgSkinTempDeviationC !== null && x.avgSkinTempDeviationC !== undefined)
+      ? x.avgSkinTempDeviationC
+      : x.skinTempDeviationC;
+    if (dv !== null && dv !== undefined) tempRows++;
+  }
   const diag = {
     hrv:  { s: statusOf(0), k: kindOf(hrv) },
     rhr:  { s: statusOf(1), k: kindOf(rhr) },
@@ -761,6 +790,11 @@ async function garminSync(body) {
       s: statusOf(5 + i),
       k: kindOfSleep(sleep[i]),
     })),
+    temp: tempDays.length
+      ? { s: statusOf(TEMP0 + tempDays.length - 1),
+          k: kindOf(temp.find(x => x && typeof x === 'object') || null) }
+      : null,
+    tempRows,
     sleepRangeRows,
   };
   if (sleepDay.length) diag.sleepDay = sleepDay;
@@ -773,7 +807,7 @@ async function garminSync(body) {
     start,
     end,
     diag,
-    data: { hrv, rhr, load, sleep, activities, weight },
+    data: { hrv, rhr, load, sleep, activities, weight, temp },
   });
 }
 

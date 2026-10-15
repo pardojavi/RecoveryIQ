@@ -1,7 +1,8 @@
 # RecoveryIQ 3.0.0
 
 App de recuperación deportiva para iPhone (PWA) conectada a la API de **Intervals.icu**.
-Combina métricas objetivas (HRV, FC en reposo, sueño, carga de entrenamiento) con tus
+Combina métricas objetivas (HRV, FC en reposo, sueño, carga de entrenamiento y,
+con Garmin, la **temperatura de la muñeca**) con tus
 registros subjetivos para calcular un **Índice de Recuperación de 0 a 100** y darte
 recomendaciones diarias.
 
@@ -90,7 +91,8 @@ referencia y renderiza el dashboard.
    → **Conectar con Garmin**.
 2. Si tu cuenta tiene verificación en dos pasos, la app te pide el **código de 6
    dígitos** y lo introducirá en el mismo sitio.
-3. Descarga los últimos 60 días y ya está.
+3. Descarga los últimos 60 días —y los últimos 14 días de **temperatura de la
+   muñeca**— y ya está.
 
 Requiere que `worker.js` esté desplegado (§4.3), porque el login de Garmin se
 hace en servidor: no puede hacerse desde el navegador. Ver **§4.5** para qué da
@@ -267,11 +269,13 @@ pide el código de 6 dígitos y lo manda con `POST sso.garmin.com/mobile/api/mfa
 | Carga de entrenamiento por actividad | `/fitnessstats-service/activity/all?metric=activityTrainingLoad` | ✅ |
 | Actividades recientes | `/activitylist-service/activities/search/activities` | ✅ |
 | **Peso y composición corporal** | `/weight-service/weight/dateRange` | ❌ **Solo Garmin** |
+| **Temperatura de la muñeca** | `/sleep-service/sleep/dailySleepData?date={día}` | ❌ **Solo Garmin** |
 
-**Son 9 peticiones por sincronización** (perfil, HRV por rango, FC reposo por
-rango, carga, actividades, composición corporal y 3 trozos de sueño de 28 días —
-ese endpoint tiene límite de 28 días). El límite del plan Free de Workers son 50
-subpeticiones por invocación, así que hay margen de sobra.
+**Son hasta 23 peticiones por sincronización** (perfil, HRV por rango, FC reposo por
+rango, carga, actividades, composición corporal, 3 trozos de sueño de 28 días —
+ese endpoint tiene límite de 28 días — y **14 `dailySleepData`**, uno por día).
+El límite del plan Free de Workers son 50 subpeticiones por invocación, así que
+hay margen.
 
 **Peso, grasa y masa magra.** El endpoint de composición corporal devuelve
 `{startDate, endDate, dateWeightList[…], totalAverage}` con **peso y masas en
@@ -291,6 +295,18 @@ la variación frente a la media. Al tocarla se abre una hoja —igual que la del
 sueño— con el desglose completo (grasa, masa magra, agua, hueso, visceral, IMC,
 edad metabólica) y una **gráfica de evolución** con mínimo, media y máximo de los
 últimos 30 registros. El **Calendario** guarda lo mismo en el detalle de cada día.
+
+**Temperatura de la muñeca.** No viene en el endpoint de sueño por rango: hay
+que pedir `/sleep-service/sleep/dailySleepData?date=` **día a día** (las últimas
+dos semanas). Cada respuesta trae en la raíz `avgSkinTempDeviationC`, que es la
+**desviación frente a tu base personal** durante el sueño —el sensor óptico no
+lee grados absolutos— junto a `skinTempCalibrationDays`, y el día en
+`dailySleepDTO.calendarDate`. `pickTemp()` acepta también las claves en °F
+(`…DeviationF`, se pasan a °C ÷1,8) y temperaturas absolutas (`skinTemperature`
+u `temperatureInCelsius`, saneadas al rango 25–45 °C), así que sirve igual si
+algún día la fuente cambia de formato. Como el dato nocturno de hoy puede no
+haber llegado aún, la portada muestra **el último día con temperatura** y avisa
+de su fecha.
 
 **CTL / ATL / TSB.** Garmin no expone CTL/ATL como tal, así que se calculan en
 `garminToRows()` con **el mismo modelo de Banister que usa Intervals.icu**:
@@ -405,7 +421,7 @@ Seis pestañas en la barra inferior + Ajustes (desde el ⚙️ de arriba):
 
 | Pestaña | Contenido |
 |---|---|
-| 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas (y **Peso** a ancho completo cuando hay dato), conclusiones automáticas. Los cuadros de **Sueño y Peso son clicables** y abren su detalle. Si hoy hay sesión, una conclusión la explica |
+| 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas (y **Peso** y **Temp. muñeca** a ancho completo cuando hay dato), conclusiones automáticas. Los cuadros de **Sueño, Peso y Temp. muñeca son clicables** y abren su detalle. Si hoy hay sesión, una conclusión la explica |
 | 📈 **Evolución** | Cómo cae tu energía a lo largo del día: curva desde que te levantas hasta que te acuestas con las sesiones marcadas, lista de las sesiones de hoy con su carga, **desglose del índice** y carga de los últimos 7 días |
 | 📅 **Calendario** | Mes completo coloreado por score, detalle por día (wellness + registro subjetivo) |
 | 🏁 **Informe** | Veredicto (🟢🟡🟠🔴), barras HRV/sueño/global, **estado de forma y rendimiento** (índice 0–100, CTL/ATL/TSB, ratio, narrativa), recomendaciones por rango |
@@ -463,6 +479,39 @@ Cada día también guarda su composición corporal: el **Calendario** la muestra
 el detalle del día, y **Ajustes → Diagnóstico Garmin** informa de cuántos días
 traen peso y qué devolvió el endpoint.
 
+#### Temperatura de la muñeca
+
+La tarjeta **🌡️ Temp. muñeca** solo aparece cuando hay dato (solo Garmin lo
+envía; Intervals.icu y el modo demo no, así que en esas fuentes sigues viendo
+las mismas métricas de siempre). Muestra la **desviación frente a tu base
+personal** con signo, los grados absolutos si los hay, los días de calibración
+del sensor y —si el dato no es de hoy— la fecha del último registro.
+
+Al tocarla se abre una hoja con la desviación del día, la temperatura absoluta,
+la media de la ventana, la calibración, una **gráfica de evolución** de los
+últimos 30 días y la **lectura del valor**: por encima de **+0,5 °C** avisa de
+posible infección o bloqueo por sobreentrenamiento, entre **+0,2 y +0,5 °C**
+recomienda vigilarlo con la HRV y la FC en reposo, y dentro de rango lo dice
+explícitamente. El pie de la hoja recuerda que el sensor óptico **no mide grados
+absolutos**, sino la desviación nocturna frente a tu base (7–30 noches).
+
+El dato también aparece en:
+
+- **Calendario** → fila «Temp. muñeca» en el detalle de cada día (con color según
+  el umbral);
+- **Informe** → barra «Temp. muñeca vs tu base» y, si está elevada, una
+  recomendación propia (🔴 descanso desde +0,5 °C, 🟡 vigilar desde +0,2 °C);
+- **Estado de forma** → estadística «Temp. muñeca vs base» (solo cuando hay dato,
+  por eso el demo sigue mostrando sus 6);
+- **Conclusiones de Inicio** → insight con la lectura del día;
+- **Chat IA** → se añade al `system prompt` junto a HRV, FC y sueño;
+- **Ajustes → Diagnóstico Garmin** → recuento «temp N» de días con dato y fila
+  con el estado HTTP del endpoint.
+
+En el **índice de recuperación** entra como componente «Temperatura» (ver la
+tabla de puntuación): solo se añade al desglose cuando hay dato, así que las
+cuentas de 4 componentes del demo no cambian.
+
 ### Algoritmo de puntuación
 
 Base neutral de **50**, ajustada por:
@@ -472,6 +521,7 @@ Base neutral de **50**, ajustada por:
 | HRV vs media de 60 días | hasta **+25 / −25** |
 | FC en reposo vs media | hasta **+15** (más baja = mejor) |
 | Sueño 7–9 h / ≥6 h / <6 h | **+10 / +4 / −8** |
+| **Temperatura de la muñeca vs tu base** (solo si hay dato) | **−15 / −10 / −6 / −3** según supere 0,8 / 0,5 / 0,3 / 0,2 °C, **−3 extra** si además la HRV está ≤ −5 % |
 | TSB = CTL − ATL | hasta **±10** (×0,5) |
 | Sesiones del día | **−18 … +3** (ver abajo) |
 
@@ -559,7 +609,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 
 ## 9. Verificación
 
-Dos suites de jsdom sobre `recovery-app.html` (**363 aserciones, 0 fallos**,
+Dos suites de jsdom sobre `recovery-app.html` (**426 aserciones, 0 fallos**,
 0 errores en tiempo de ejecución). Están en `tests/` (`npm install` y
 `node test-smoke.mjs` / `node test-garmin.mjs`).
 
@@ -592,7 +642,7 @@ Dos suites de jsdom sobre `recovery-app.html` (**363 aserciones, 0 fallos**,
 - **Pestaña Evolución**: SVG de la curva, desglose con sus filas, avisos cuando
   no hay sesiones y nota de que es una estimación.
 
-### `test-garmin.mjs` — 196 aserciones
+### `test-garmin.mjs` — 259 aserciones
 
 - **Normalizador `garminToRows()`**: 60 filas, HRV, FC en reposo, sueño en horas
   con 1 decimal, y las 4 fases reales sumando exactamente el total.
@@ -604,6 +654,16 @@ Dos suites de jsdom sobre `recovery-app.html` (**363 aserciones, 0 fallos**,
   completo, la hoja de detalle con desglose + gráfico de evolución, el peso en
   el detalle de día del Calendario y la fila «Peso» del panel de diagnóstico en
   Ajustes.
+- **Temperatura de la muñeca** con la forma real de `dailySleepData`:
+  `pickTemp()` saneando desviaciones (°C y °F → °C) y absolutos (25–45 °C),
+  umbrales de `tempDelta()` (−15/−10/−6/−3 y el −3 extra con la HRV hundida),
+  `garminToRows()` leyendo la raíz + `dailySleepDTO`, penalización exacta de
+  9 puntos sobre el índice, el caso de solo grados absolutos (media de la
+  ventana), la tarjeta (6 tarjetas, `data-metric="temp"` a ancho completo), su
+  hoja con gráfico, la fila en el Calendario, la barra y la recomendación del
+  Informe, 7 estadísticas de forma, el `system prompt` con la temperatura y las
+  filas «temp» del diagnóstico en Ajustes. Además se comprueba que `worker.js`
+  pide `dailySleepData` para los últimos 14 días y lo devuelve en `data`.
 - Redondeo de horas (`sec2h`), `garminFitness()` (EMA 42/7 con semilla en la
   media: carga constante 100 → CTL/ATL 100).
 - `assembleData()` con filas de Garmin: fases **no estimadas**, TSB = CTL − ATL,

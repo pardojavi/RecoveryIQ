@@ -1429,6 +1429,10 @@ button{border:0; background:none; cursor:pointer; padding:0;}
           <span class="v" id="diag-weight">&#8212;</span>
         </div>
         <div class="set-row">
+          <span class="k">Temp. mu&#241;eca</span>
+          <span class="v" id="diag-temp">&#8212;</span>
+        </div>
+        <div class="set-row">
           <span class="k">Actividades</span>
           <span class="v" id="diag-acts">&#8212;</span>
         </div>
@@ -1538,6 +1542,9 @@ var S = {
 
 /* Medias de referencia (60 días) — las lee calcScore() */
 var avgHRV = 0, avgHR = 0, avgSleep = 0;
+/* Media de temperatura absoluta de la mu&#241;eca (°C) en la ventana. 0 = la
+   fuente solo informa desviaciones (Garmin), que ya vienen relativas a tu base. */
+var avgTemp = 0;
 
 /* ---------- 3. UTILIDADES ---------- */
 function $(id){ return document.getElementById(id); }
@@ -1922,6 +1929,16 @@ function scoreParts(w, acts){
     parts.push({ label:'Sue&#241;o', delta:d });
   }
 
+  // Temperatura de la mu&#241;eca: sube con la fiebre y con el bloqueo por
+  // sobreentrenamiento. Solo entra si hay dato (la fuente no siempre lo trae).
+  var devT = tempDevOf(w);
+  if (devT !== null) {
+    var hrvPct = (w.hrv && avgHRV) ? ((w.hrv - avgHRV) / avgHRV) * 100 : null;
+    d = tempDelta(devT, hrvPct);
+    score += d;
+    parts.push({ label:'Temperatura', delta:d });
+  }
+
   // TSB = CTL - ATL
   if (w.ctl && w.atl) {
     d = Math.min(10, Math.max(-10, (w.ctl - w.atl) * 0.5));
@@ -2014,7 +2031,10 @@ function normalizeRows(list){
       sleep:      getSleep(w),
       stages:     readSleepStages(w),
       ctl:        w.ctl || 0,
-      atl:        w.atl || 0
+      atl:        w.atl || 0,
+      // Temperatura de la mu&#241;eca: desviaci&#243;n vs base o grados absolutos
+      tempDev:    tempDevField(w),
+      tempC:      tempAbsField(w)
     });
   }
   out.sort(function(a,b){ return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0); });
@@ -2024,19 +2044,26 @@ function normalizeRows(list){
 function assembleData(rows, activities){
   if (rows.length > 60) rows = rows.slice(rows.length - 60);
 
-  var hs = [], rs = [], ss = [], i;
+  var hs = [], rs = [], ss = [], ts = [], i;
   for (i = 0; i < rows.length; i++) {
     if (rows[i].hrv && rows[i].hrv > 0) hs.push(rows[i].hrv);
     if (rows[i].restingHR && rows[i].restingHR > 0) rs.push(rows[i].restingHR);
     if (rows[i].sleep !== null) ss.push(rows[i].sleep);
+    if (rows[i].tempC !== null && rows[i].tempC !== undefined && isFinite(rows[i].tempC)) {
+      ts.push(rows[i].tempC);
+    }
   }
-  var sh = 0, sr = 0, ss2 = 0;
+  var sh = 0, sr = 0, ss2 = 0, st = 0;
   for (i = 0; i < hs.length; i++) sh += hs[i];
   for (i = 0; i < rs.length; i++) sr += rs[i];
   for (i = 0; i < ss.length; i++) ss2 += ss[i];
+  for (i = 0; i < ts.length; i++) st += ts[i];
   avgHRV   = hs.length ? sh / hs.length : 0;
   avgHR    = rs.length ? sr / rs.length : 0;
   avgSleep = ss.length ? ss2 / ss.length : 0;
+  // Temperatura absoluta media de la ventana: es la "base" contra la que se
+  // convierte un registro que solo traiga grados (Garmin va con desviaciones).
+  avgTemp  = ts.length ? Math.round(st / ts.length * 10) / 10 : 0;
 
   var byDay = groupActivities(activities);
   var dailyMap = {};
@@ -2060,7 +2087,12 @@ function assembleData(rows, activities){
       actDelta:  sp.actDelta,
       parts:     sp.parts,
       acts:      acts,
-      body:      r.body || null
+      body:      r.body || null,
+      // Temperatura de la mu&#241;eca: desviaci&#243;n efectiva vs tu base (&#176;C),
+      // grados absolutos si los hay y d&#237;as de calibraci&#243;n del sensor
+      temp:      tempDevOf(r),
+      tempC:     (r.tempC !== undefined && r.tempC !== null) ? r.tempC : null,
+      tempCalib: r.tempCalib || null
     };
   }
 
@@ -2088,6 +2120,21 @@ function assembleData(rows, activities){
   // pesa todos los d&#237;as y no queremos una raya en la portada).
   var curBody = (t.body && t.body.weight) ? t.body : wLast;
 
+  /* Temperatura de la mu&#241;eca: &#250;ltimo d&#237;a con dato hacia atr&#225;s (el dato
+     nocturno de hoy puede a&#250;n no haber llegado al sincronizar). */
+  var tmpDev = null, tmpAbs = null, tmpCalib = null, tmpKey = '';
+  for (i = keys.length - 1; i >= 0; i--) {
+    var dk = keys[i], dm = dailyMap[dk];
+    if ((dm.temp !== null && dm.temp !== undefined) ||
+        (dm.tempC !== null && dm.tempC !== undefined)) {
+      tmpDev  = (dm.temp !== null && dm.temp !== undefined) ? dm.temp : null;
+      tmpAbs  = dm.tempC;
+      tmpCalib= dm.tempCalib;
+      tmpKey  = dk;
+      break;
+    }
+  }
+
   var today = {
     date:                endKey,
     body:                curBody,
@@ -2096,6 +2143,13 @@ function assembleData(rows, activities){
     weightBaseline:      wAvg,
     weightChange:        (wLast && wAvg) ? round1(wLast.weight - wAvg) : 0,
     bodyFat:             curBody ? (curBody.bodyFat || null) : null,
+    // Temperatura de la mu&#241;eca: desviaci&#243;n vs tu base, grados absolutos si
+    // los hay, media de la ventana y d&#237;as de calibraci&#243;n del sensor
+    temp:                tmpDev,
+    tempAbs:             tmpAbs,
+    tempBaseline:        avgTemp,
+    tempCalib:           tmpCalib,
+    tempDate:            tmpKey,
     hrv:                 t.hrv,
     hrvBaseline:         round1(avgHRV),
     hrvChange:           avgHRV ? round1(((t.hrv || avgHRV) - avgHRV) / avgHRV * 100) : 0,
@@ -2322,28 +2376,32 @@ function sleepDiagCell(list, fallback){
 function garminDiag(r, rows, acts){
   var d = r.diag || null;
   var today = ymd(new Date()), i;
-  var hrvDays = 0, sleepDays = 0, rhrDays = 0, bodyDays = 0;
-  var tHrv = null, tSleep = null, tRhr = null;
+  var hrvDays = 0, sleepDays = 0, rhrDays = 0, bodyDays = 0, tempDays = 0;
+  var tHrv = null, tSleep = null, tRhr = null, tTemp = null;
   for (i = 0; i < rows.length; i++) {
     if (rows[i].hrv) hrvDays++;
     if (rows[i].sleep !== null) sleepDays++;
     if (rows[i].restingHR) rhrDays++;
     if (rows[i].body && rows[i].body.weight) bodyDays++;
+    if (rows[i].tempDev !== null || rows[i].tempC !== null) tempDays++;
     if (rows[i].id === today) {
       tHrv = rows[i].hrv; tSleep = rows[i].sleep; tRhr = rows[i].restingHR;
+      tTemp = tempDevOf(rows[i]);
     }
   }
   return {
     start: r.start || '', end: r.end || '',
     days: rows.length,
     hrvDays: hrvDays, sleepDays: sleepDays, rhrDays: rhrDays, bodyDays: bodyDays,
+    tempDays: tempDays,
     actsCount: (acts && acts.length) || 0,
-    todayHrv: tHrv, todaySleep: tSleep, todayRhr: tRhr,
+    todayHrv: tHrv, todaySleep: tSleep, todayRhr: tRhr, todayTemp: tTemp,
     hrv:  (d && d.hrv)  || null,
     rhr:  (d && d.rhr)  || null,
     load: (d && d.load) || null,
     act:  (d && d.acts) || null,
     weight: (d && d.weight) || null,
+    temp: (d && d.temp) || null,
     sleep: sleepDiagCell(d && d.sleep, d && d.sleepDay)
   };
 }
@@ -2571,6 +2629,100 @@ function pickBody(o){
   return b;
 }
 
+/* ---------- temperatura de la mu&#241;eca (skin-temp) ---------- */
+/* Garmin mide la temperatura de la mu&#241;eca durante el sue&#241;o como DESVIACI&#211;N
+   frente a tu propia base personal (p. ej. +0,4 &#176;C), nunca como grados
+   absolutos: el sensor &#243;ptico no sirve para leer la temperatura literal.
+   El endpoint es /sleep-service/sleep/dailySleepData?date= y trae, adem&#225;s
+   del sue&#241;o, avgSkinTempDeviationC / skinTempCalibrationDays.
+   Aqu&#237; se admiten las dos formas (desviaci&#243;n o grados absolutos) por si la
+   fuente cambia o el dato viene de otro origen. */
+
+/* Primer n&#250;mero legible de la lista de claves (null = no est&#225;).
+   Un 0 s&#237; es dato v&#225;lido: significa "igual que tu base". */
+function numOrNull(o, keys){
+  if (!o || typeof o !== 'object') return null;
+  for (var i = 0; i < keys.length; i++) {
+    var v = parseFloat(o[keys[i]]);
+    if (isFinite(v)) return v;
+  }
+  return null;
+}
+
+/* Saneados: una desviaci&#243;n razonable no supera los &#177;5 &#176;C y una
+   temperatura absoluta de la piel ronda los 25&#8211;45 &#176;C. Lo que se sale
+   de ah&#237; es un campo corrupto o de otra magnitud, y se descarta. */
+function fitDev(v){
+  if (v === null || v === undefined || !isFinite(v)) return null;
+  return (Math.abs(v) <= 5) ? Math.round(v * 10) / 10 : null;
+}
+function fitAbs(v){
+  if (v === null || v === undefined || !isFinite(v)) return null;
+  return (v >= 25 && v <= 45) ? Math.round(v * 10) / 10 : null;
+}
+
+/* Claves reales de Garmin (garth: avg_skin_temp_deviation_c) + alias por si
+   Garmin u otro origen las traen con otro nombre. Las de &#176;F se pasan a
+   &#176;C dividiendo por 1,8 (el resto del repo guarda todo en m&#233;trico). */
+var TEMP_DEV_KEYS = ['avgSkinTempDeviationC', 'skinTempDeviationC',
+  'skinTemperatureDeviationC', 'avgSkinTemperatureDeviationC',
+  'wristTempDeviationC', 'tempDeviationC'];
+var TEMP_DEV_F_KEYS = ['avgSkinTempDeviationF', 'skinTempDeviationF',
+  'skinTemperatureDeviationF', 'wristTempDeviationF'];
+var TEMP_ABS_KEYS = ['skinTemperature', 'avgSkinTemperature', 'skinTempCelsius',
+  'wristTemperature', 'temperatureInCelsius'];
+
+/* {dev, abs} de un registro: desviaci&#243;n vs la base y grados absolutos. */
+function pickTemp(o){
+  var out = { dev: null, abs: null }, v, f;
+  v = numOrNull(o, TEMP_DEV_KEYS);
+  if (v === null) { f = numOrNull(o, TEMP_DEV_F_KEYS); if (f !== null) v = f / 1.8; }
+  out.dev = fitDev(v);
+  out.abs = fitAbs(numOrNull(o, TEMP_ABS_KEYS));
+  return out;
+}
+
+/* Campos de temperatura ya normalizados (los usa normalizeRows). */
+function tempDevField(w){
+  if (!w || typeof w !== 'object') return null;
+  if (w.tempDev !== undefined && w.tempDev !== null) return fitDev(parseFloat(w.tempDev));
+  return pickTemp(w).dev;
+}
+function tempAbsField(w){
+  if (!w || typeof w !== 'object') return null;
+  if (w.tempC !== undefined && w.tempC !== null) return fitAbs(parseFloat(w.tempC));
+  return pickTemp(w).abs;
+}
+
+/* Desviaci&#243;n EFECTIVA de una fila (&#176;C): si la fuente trae la desviaci&#243;n
+   directa (Garmin), se usa tal cual; si solo trae grados absolutos, se compara
+   con la media de la ventana (avgTemp). null = sin dato de temperatura. */
+function tempDevOf(w){
+  if (!w) return null;
+  if (w.tempDev !== null && w.tempDev !== undefined && isFinite(w.tempDev)) {
+    return Math.round(w.tempDev * 10) / 10;
+  }
+  if (w.tempC !== null && w.tempC !== undefined && isFinite(w.tempC) && avgTemp) {
+    return Math.round((w.tempC - avgTemp) * 10) / 10;
+  }
+  return null;
+}
+
+/* Penalizaci&#243;n del &#237;ndice por temperatura corporal alta (fiebre o
+   sobreentrenamiento): umbrales sobre la desviaci&#243;n vs tu base. */
+function tempDelta(dev, hrvPct){
+  if (dev === null || dev === undefined || !isFinite(dev)) return null;
+  var d = 0;
+  if (dev >= 0.8)      d = -15;
+  else if (dev >= 0.5) d = -10;
+  else if (dev >= 0.3) d = -6;
+  else if (dev >= 0.2) d = -3;
+  // Temperatura alta + HRV hundido = la combinaci&#243;n cl&#225;sica de infecci&#243;n
+  // incipiente o de un bloqueo por sobreentrenamiento: un punto m&#225;s de castigo.
+  if (d < 0 && hrvPct !== null && hrvPct !== undefined && hrvPct <= -5) d -= 3;
+  return d;
+}
+
 /* Carga diaria = suma del activityTrainingLoad de cada actividad.
    Barrido profundo: da igual qu&#233; c&#225;psula use el endpoint de cargas. */
 function garminLoadMap(g){
@@ -2620,7 +2772,8 @@ function garminToRows(g){
     if (!id) return null;
     if (!rows[id]) {
       rows[id] = { id:id, hrv:null, restingHR:null, sleep:null, stages:null,
-                   ctl:0, atl:0, body:null };
+                   ctl:0, atl:0, body:null,
+                   tempDev:null, tempC:null, tempCalib:null };
       ids.push(id);
     }
     return rows[id];
@@ -2672,6 +2825,15 @@ function garminToRows(g){
     if (!s || typeof s !== 'object') continue;
     var id3 = sleepDay(s) || garminDate(s) || garminDate(rec);
     if (!id3) continue;
+    /* Temperatura: por si Garmin la cuela dentro del trozo de sue&#241;o */
+    var tmpS = pickTemp(s);
+    if (tmpS.dev !== null || tmpS.abs !== null) {
+      var rT = row(id3);
+      if (rT) {
+        if (rT.tempDev === null) rT.tempDev = tmpS.dev;
+        if (rT.tempC === null)   rT.tempC   = tmpS.abs;
+      }
+    }
     var deep  = numv(s.deepSleepSeconds)  || numv(s.deepTime),
         light = numv(s.lightSleepSeconds) || numv(s.lightTime),
         rem   = numv(s.remSleepSeconds)   || numv(s.remTime),
@@ -2700,6 +2862,28 @@ function garminToRows(g){
     if (hv && !r3.hrv) r3.hrv = Math.round(hv);
     var rh = numv(s.restingHeartRate);
     if (rh && !r3.restingHR) r3.restingHR = Math.round(rh);
+  }
+
+  /* Temperatura de la mu&#241;eca (endpoint /sleep-service/sleep/dailySleepData):
+      cada respuesta trae, en la ra&#237;z, avgSkinTempDeviationC (desviaci&#243;n vs
+      tu base personal) y skinTempCalibrationDays; el d&#237;a sale de dailySleepDTO.
+      Se aplanan la ra&#237;z y su DTO para leer ambos en un solo paso. */
+  var trec = recordsOf(g.temp);
+  for (i = 0; i < trec.length; i++) {
+    var tp = trec[i];
+    if (!tp || typeof tp !== 'object') continue;
+    if (Object.prototype.toString.call(tp) === '[object Array]') continue;
+    tp = flattenObj(tp);
+    var idT = sleepDay(tp) || garminDate(tp);
+    if (!idT) continue;
+    var gotT = pickTemp(tp), calT = numOrNull(tp, ['skinTempCalibrationDays',
+                                                   'skinTempCalibrationDay']);
+    if (gotT.dev === null && gotT.abs === null && calT === null) continue;
+    var rt = row(idT);
+    if (!rt) continue;
+    if (rt.tempDev === null) rt.tempDev = gotT.dev;
+    if (rt.tempC === null)   rt.tempC   = gotT.abs;
+    if (rt.tempCalib === null && calT !== null) rt.tempCalib = Math.round(calT);
   }
 
   /* Composici&#243;n corporal: peso, grasa, masa magra, agua, hueso, visceral,
@@ -2743,7 +2927,8 @@ function garminToRows(g){
   var out = [];
   for (i = 0; i < ids.length; i++) {
     var r = rows[ids[i]];
-    if (r.hrv || r.restingHR || r.sleep !== null || r.body) out.push(r);
+    if (r.hrv || r.restingHR || r.sleep !== null || r.body ||
+        r.tempDev !== null || r.tempC !== null) out.push(r);
   }
   return out;
 }
@@ -3020,6 +3205,151 @@ function showWeightDetail(){
   document.body.appendChild(ov);
 }
 
+/* Evoluci&#243;n de la temperatura de la mu&#241;eca: la desviaci&#243;n diaria frente a
+   tu base, que es lo &#250;nico que informa el sensor &#243;ptico de Garmin. */
+function tempSpark(){
+  if (!S.data || !S.data.dailyMap) return '';
+  var dm = S.data.dailyMap, ks = [], i, v, sum = 0;
+  for (var k in dm) {
+    if (dm.hasOwnProperty(k) &&
+        dm[k].temp !== null && dm[k].temp !== undefined) ks.push(k);
+  }
+  ks.sort();
+  if (ks.length < 4) return '';
+  ks = ks.slice(-30);
+
+  var min = 1e9, max = -1e9;
+  for (i = 0; i < ks.length; i++) {
+    v = dm[ks[i]].temp;
+    sum += v;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  var span = (max - min) || 1;
+  var W = 300, H = 70, pad = 9;
+  var d = '', first = true, x, y;
+  for (i = 0; i < ks.length; i++) {
+    v = dm[ks[i]].temp;
+    x = pad + (i / (ks.length - 1)) * (W - 2 * pad);
+    y = pad + (1 - (v - min) / span) * (H - 2 * pad);
+    d += (first ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+    first = false;
+  }
+  var area = 'M' + pad + ' ' + (H - pad) + ' L' + d.slice(1) +
+             'L' + (W - pad) + ' ' + (H - pad) + ' Z';
+
+  function sgn(n){ return (n > 0 ? '+' : '') + round1(n); }
+  return '<div class="sl-sub">Evoluci&#243;n &#183; &#250;ltimos ' + ks.length + ' d&#237;as</div>' +
+         '<svg class="spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+           '<path d="' + area + '" fill="#fb923c" fill-opacity=".12"></path>' +
+           '<path d="' + d + '" fill="none" stroke="#fb923c" stroke-width="2" ' +
+                 'stroke-linejoin="round" stroke-linecap="round" ' +
+                 'vector-effect="non-scaling-stroke"></path>' +
+         '</svg>' +
+         '<div class="spark-legend">' +
+           '<span>M&#237;n <b>' + sgn(min) + '</b> &#176;C</span>' +
+           '<span>Media <b>' + sgn(sum / ks.length) + '</b> &#176;C</span>' +
+           '<span>M&#225;x <b>' + sgn(max) + '</b> &#176;C</span>' +
+         '</div>';
+}
+
+function showTempDetail(){
+  var ov = document.createElement('div');
+  ov.className = 'sheet-overlay';
+
+  var title = '<div class="sheet-title">Temperatura de la mu&#241;eca</div>';
+  var body  = '';
+  var t = (S.data && S.data.today) ? S.data.today : null;
+
+  if (t && t.temp !== null && t.temp !== undefined) {
+    var fd = parseYmd(t.tempDate || t.date);
+    var fecha = DOW_FULL[fd.getDay()] + ' ' + fd.getDate() + ' de ' +
+                MONTHS[fd.getMonth()].toLowerCase();
+
+    function sgn(n){ return (n > 0 ? '+' : '') + round1(n); }
+    var color = Math.abs(t.temp) >= 0.5 ? '#f87171'
+              : (Math.abs(t.temp) >= 0.2 ? '#fbbf24' : '#22d3a0');
+
+    var rows = '<div class="sl-row">' +
+                 '<span class="sl-dot" style="background:' + color + '"></span>' +
+                 '<span class="sl-name">Desviaci&#243;n vs tu base</span>' +
+                 '<span class="sl-h">' + sgn(t.temp) + ' &#176;C</span>' +
+               '</div>';
+    if (t.tempAbs !== null && t.tempAbs !== undefined) {
+      rows += '<div class="sl-row">' +
+                '<span class="sl-dot" style="background:#60a5fa"></span>' +
+                '<span class="sl-name">Temperatura absoluta</span>' +
+                '<span class="sl-h">' + t.tempAbs + ' &#176;C</span>' +
+              '</div>';
+    }
+    if (t.tempBaseline) {
+      rows += '<div class="sl-row">' +
+                '<span class="sl-dot" style="background:#a78bfa"></span>' +
+                '<span class="sl-name">Media de la ventana</span>' +
+                '<span class="sl-h">' + t.tempBaseline + ' &#176;C</span>' +
+              '</div>';
+    }
+    if (t.tempCalib) {
+      rows += '<div class="sl-row">' +
+                '<span class="sl-dot" style="background:#22d3a0"></span>' +
+                '<span class="sl-name">Calibraci&#243;n del sensor</span>' +
+                '<span class="sl-h">' + t.tempCalib + ' d&#237;as</span>' +
+              '</div>';
+    }
+
+    var chips = '<span class="sl-chip ' + (Math.abs(t.temp) >= 0.2 ? 'down' : 'up') +
+                '">Base personal <b>0</b> &#176;C</span>' +
+                '<span class="sl-chip ' + (t.temp >= 0.5 ? 'down' : (t.temp >= 0.2 ? 'flat' : 'up')) +
+                '">Alerta desde <b>+0.5</b> &#176;C</span>';
+
+    var nota;
+    if (t.temp >= 0.8) {
+      nota = '<div class="sl-note">&#9888;&#65039; Muy por encima de tu base: compatible con ' +
+             '<b>fiebre</b> o con un <b>bloqueo por sobreentrenamiento</b>. Cambia el entreno ' +
+             'por descanso y vuelve a medirte ma&#241;ana.</div>';
+    } else if (t.temp >= 0.5) {
+      nota = '<div class="sl-note">&#9888;&#65039; Por encima de tu base: puede ser el primer ' +
+             'aviso de una <b>infecci&#243;n incipiente</b> o de fatiga profunda. Vigila tambi&#233;n ' +
+             'la HRV y la FC en reposo.</div>';
+    } else if (t.temp >= 0.2) {
+      nota = '<div class="sl-note">&#128065; Ligeramente elevada: puede ser el primer aviso de una ' +
+             '<b>infecci&#243;n</b> o de fatiga acumulada. A&#250;n no es fiebre; acompa&#241;a el dato con ' +
+             'el sue&#241;o y la HRV antes de subir la intensidad.</div>';
+    } else if (t.temp <= -0.5) {
+      nota = '<div class="sl-note">&#10004; Por debajo de tu base: suele acompa&#241;ar a un ' +
+             '<b>descanso profundo</b>, sin indicios de enfermedad.</div>';
+    } else {
+      nota = '<div class="sl-note">&#10004; Dentro de tu rango habitual: sin indicios de ' +
+             'infecci&#243;n ni de sobreentrenamiento.</div>';
+    }
+
+    body =
+      '<div class="sl-date">' + fecha + '</div>' +
+      '<div class="sl-total"><b>' + sgn(t.temp) + '</b><small>&#176;C</small></div>' +
+      '<div class="sl-rows">' + rows + '</div>' +
+      '<div class="sl-chips">' + chips + '</div>' +
+      tempSpark() +
+      nota +
+      '<div class="sl-note">El sensor &#243;ptico de la mu&#241;eca no lee grados absolutos: ' +
+      'Garmin informa la <b>desviaci&#243;n durante el sue&#241;o</b> frente a tu propia base ' +
+      'personal (los &#250;ltimos 7&#8211;30 noches).</div>';
+  }
+
+  ov.innerHTML =
+    '<div class="sheet">' +
+      '<div class="sheet-handle"></div>' +
+      title + body +
+      '<button class="btn-primary sheet-close">Cerrar</button>' +
+    '</div>';
+
+  function close(){ if (ov.parentNode) ov.parentNode.removeChild(ov); }
+  ov.addEventListener('click', function(e){
+    if (e.target === ov) close();
+    if (e.target && e.target.className && String(e.target.className).indexOf('sheet-close') >= 0) close();
+  });
+  document.body.appendChild(ov);
+}
+
 function showErrorModal(msg){
   var ov = document.createElement('div');
   ov.className = 'sheet-overlay';
@@ -3233,6 +3563,23 @@ function renderDashboard(){
                        mW, cW, 'data-metric="weight"', 'span2');
   }
 
+  /* Temperatura de la mu&#241;eca: solo se pinta si hay dato (Garmin; el modo
+     demo e Intervals.icu no la traen). El valor es la desviaci&#243;n vs tu base. */
+  var tmpCard = '';
+  if (t.temp !== null && t.temp !== undefined) {
+    var mTmp = Math.round(clamp(50 + t.temp * 50, 5, 100));
+    var cTmp = Math.abs(t.temp) >= 0.5 ? 'var(--red)'
+             : (Math.abs(t.temp) >= 0.2 ? 'var(--yellow)' : 'var(--green)');
+    var tmpParts = ['vs tu base personal'];
+    if (t.tempAbs !== null && t.tempAbs !== undefined) tmpParts.push(t.tempAbs + ' &#176;C absolutos');
+    if (t.tempCalib) tmpParts.push('calibrado ' + t.tempCalib + ' d');
+    var tmpSub = tmpParts.join(' &#183; ');
+    if (t.tempDate && t.tempDate !== t.date) tmpSub += ' &#183; &#250;lt. ' + shortDate(t.tempDate);
+    tmpCard = metricCard('&#127777;&#65039;', 'Temp. mu&#241;eca',
+                         (t.temp > 0 ? '+' : '') + t.temp, '&#176;C', tmpSub,
+                         mTmp, cTmp, 'data-metric="temp"', 'span2');
+  }
+
   $('metrics-grid') && ($('metrics-grid').innerHTML =
     metricCard('&#128147;', 'HRV', t.hrv ? t.hrv : '&#8211;', 'ms',
                t.hrv ? 'Baseline ' + t.hrvBaseline + ' ms' : 'Sin datos', mHrv, 'var(--accent2)') +
@@ -3243,7 +3590,8 @@ function renderDashboard(){
                'data-metric="sleep"') +
     metricCard('&#9889;', 'TSB', (t.tsb > 0 ? '+' : '') + t.tsb, '',
                'CTL ' + t.ctl + ' &#183; ATL ' + t.atl, mTsb, cTsb) +
-    wCard
+    wCard +
+    tmpCard
   );
 
   /* Insights */
@@ -3314,6 +3662,30 @@ function buildInsights(){
   } else if (t.restingHRChange <= -5) {
     out.push({ type:'good', icon:'&#129658;', title:'FC en reposo baja',
       body:'Un ' + Math.abs(t.restingHRChange) + '% por debajo de tu media: signo de buena recuperaci&#243;n.' });
+  }
+
+  /* Temperatura de la mu&#241;eca: la le&#237; m&#225;s temprana de una infecci&#243;n
+     (la piel sube antes que la fiebre) y del bloqueo por sobreentrenamiento. */
+  if (t.temp !== null && t.temp !== undefined) {
+    var devTxt = (t.temp > 0 ? '+' : '') + t.temp + ' &#176;C';
+    var hrvLow = t.hrvChange !== null && t.hrvChange !== undefined && t.hrvChange <= -5;
+    if (t.temp >= 0.5) {
+      out.push({ type:'bad', icon:'&#127777;&#65039;',
+        title: hrvLow ? 'Fiebre o sobreentrenamiento' : 'Temperatura de la mu&#241;eca alta',
+        body:'La mu&#241;eca est&#225; ' + devTxt + ' por encima de tu base' +
+             (hrvLow ? ' y adem&#225;s la HRV ha ca&#237;do un ' + Math.abs(t.hrvChange) +
+                       '%: combinaci&#243;n t&#237;pica de infecci&#243;n incipiente o de un bloqueo. Hoy, a descansar y vigilar la temperatura.'
+                     : '. Puede ser el inicio de una enfermedad: baja el ritmo y rep&#239;telo ma&#241;ana.') });
+    } else if (t.temp >= 0.2) {
+      out.push({ type:'warn', icon:'&#127777;&#65039;', title:'Temperatura ligeramente elevada',
+        body:devTxt + ' sobre tu base. No es fiebre a&#250;n, pero acompa&#241;ado de cansancio o de una HRV baja conviene entrenar suave.' });
+    } else if (t.temp <= -0.5) {
+      out.push({ type:'good', icon:'&#127777;&#65039;', title:'Temperatura por debajo de tu base',
+        body:devTxt + ': se&#241;al de descanso profundo, sin indicios de enfermedad.' });
+    } else {
+      out.push({ type:'good', icon:'&#127777;&#65039;', title:'Temperatura estable',
+        body:'La mu&#241;eca marca ' + devTxt + ' frente a tu base personal: sin indicios de infecci&#243;n ni de sobreentrenamiento.' });
+    }
   }
 
   if (S.logs.length && S.logs[0].fatigue >= 4) {
@@ -3686,6 +4058,12 @@ function showDayDetail(key){
     html += row('HRV', (d.hrv || '&#8211;') + ' ms');
     html += row('FC reposo', (d.restingHR || '&#8211;') + ' bpm');
     html += row('Sue&#241;o', (d.sleep !== null ? fmtSleep(d.sleep) + ' h' : '&#8211;'));
+    if (d.temp !== null && d.temp !== undefined) {
+      html += row('Temp. mu&#241;eca',
+                  (d.temp > 0 ? '+' : '') + d.temp + ' &#176;C',
+                  Math.abs(d.temp) >= 0.5 ? '#f87171'
+                    : (Math.abs(d.temp) >= 0.2 ? '#fbbf24' : null));
+    }
     if (d.body && d.body.weight) {
       html += row('Peso', d.body.weight + ' kg');
       if (d.body.bodyFat) html += row('Grasa corporal', d.body.bodyFat + ' %');
@@ -3750,6 +4128,16 @@ function renderReport(){
   var hrvPct = Math.round(clamp(t.hrv && avgHRV ? (t.hrv / avgHRV) * 100 : 0, 0, 100));
   var slpPct = Math.round(clamp(t.sleep !== null ? (t.sleep / 9) * 100 : 0, 0, 100));
 
+  var tempBar = '';
+  if (t.temp !== null && t.temp !== undefined) {
+    var tmpPct = Math.round(clamp(50 + t.temp * 50, 0, 100));
+    tempBar = bar('Temp. mu&#241;eca vs tu base',
+                  (t.temp > 0 ? '+' : '') + t.temp + ' &#176;C', tmpPct,
+                  'Desviaci&#243;n nocturna &#183; umbrales: 0,2 &#183; 0,5 &#183; 0,8 &#176;C',
+                  Math.abs(t.temp) >= 0.5 ? '#f87171'
+                    : (Math.abs(t.temp) >= 0.2 ? '#fbbf24' : '#22d3a0'));
+  }
+
   $('report-bars') && ($('report-bars').innerHTML =
     bar('HRV vs baseline', hrvPct + '%', hrvPct,
         (t.hrv || 0) + ' ms &#183; base ' + t.hrvBaseline + ' ms',
@@ -3757,6 +4145,7 @@ function renderReport(){
     bar('Sue&#241;o vs 9 h m&#225;ximo', slpPct + '%', slpPct,
         (t.sleep !== null ? fmtSleep(t.sleep) + ' h' : '&#8211;') + ' de 9 h',
         slpPct >= 80 ? '#22d3a0' : (slpPct >= 72 ? '#60a5fa' : '#fbbf24')) +
+    tempBar +
     bar('Puntuaci&#243;n global', score + '/100', score,
         scoreLabel(score) + ' &#183; umbral de descanso 50',
         scoreColorHex(score))
@@ -3792,6 +4181,17 @@ function renderReport(){
   if (t.tsb < -15) {
     recs.push({ cls:'warn', title:'&#9889; Carga aguda elevada',
       body:'Tu TSB (' + t.tsb + ') indica fatiga acumulada. Considera un d&#237;a ligero antes de volver a cargar.' });
+  }
+  if (t.temp !== null && t.temp !== undefined && t.temp >= 0.2) {
+    var tmpTxt = (t.temp > 0 ? '+' : '') + t.temp + ' &#176;C sobre tu base';
+    if (t.temp >= 0.5) {
+      recs.push({ cls:'bad', title:'&#127777;&#65039; Temperatura alta: descansa',
+        body:'La mu&#241;eca est&#225; ' + tmpTxt +
+             '. Es la se&#241;al m&#225;s temprana de una infecci&#243;n o de un bloqueo por sobreentrenamiento: cambia el entreno por descanso y vuelve a medirte ma&#241;ana.' });
+    } else {
+      recs.push({ cls:'warn', title:'&#127777;&#65039; Vigila la temperatura',
+        body:tmpTxt + '. A&#250;n no es fiebre, pero acompa&#241;alo con el sue&#241;o, la FC en reposo y la HRV antes de subir la intensidad.' });
+    }
   }
 
   var html = '';
@@ -3908,6 +4308,10 @@ function renderFormReport(){
       fstat(ratio.toFixed(2), 'Ratio CTL/ATL') +
       fstat((t.hrvChange > 0 ? '+' : '') + t.hrvChange + '%', 'HRV vs base') +
       fstat(fmtSleep(avgSleep) + ' h', 'Sue&#241;o medio') +
+      // Solo si hay dato de la mu&#241;eca: el demo y Intervals.icu no lo traen
+      (t.temp !== null && t.temp !== undefined
+        ? fstat((t.temp > 0 ? '+' : '') + t.temp + ' &#176;C', 'Temp. mu&#241;eca vs base')
+        : '') +
     '</div>' +
 
     '<div class="f-bars">' +
@@ -4049,7 +4453,8 @@ function renderSettings(){
         (dg.days || 0) + ' d&#237;as &#183; HRV ' + (dg.hrvDays || 0) +
         ' &#183; sue&#241;o ' + (dg.sleepDays || 0) +
         ' &#183; FC ' + (dg.rhrDays || 0) +
-        ' &#183; peso ' + (dg.bodyDays || 0);
+        ' &#183; peso ' + (dg.bodyDays || 0) +
+        ' &#183; temp ' + (dg.tempDays || 0);
       if ($('diag-hrv')) $('diag-hrv').innerHTML = diagCell(dg.hrv) +
         (dg.todayHrv ? ' &#183; hoy <b>' + dg.todayHrv + '</b>' : ' &#183; hoy sin dato');
       if ($('diag-sleep')) $('diag-sleep').innerHTML = diagCell(dg.sleep) +
@@ -4063,6 +4468,12 @@ function renderSettings(){
         (dg.weight && dg.weight.n != null ? ' &#183; <b>' + dg.weight.n + '</b> r' :
           (dg.bodyDays ? ' &#183; <b>' + dg.bodyDays + '</b> d' : '')) +
         (dg.bodyDays ? '' : ' &#183; sin peso');
+      if ($('diag-temp')) $('diag-temp').innerHTML =
+        diagCell(dg.temp) +
+        (dg.tempDays ? ' &#183; <b>' + dg.tempDays + '</b> d' : ' &#183; sin temperatura') +
+        (dg.todayTemp !== null && dg.todayTemp !== undefined
+           ? ' &#183; hoy <b>' + (dg.todayTemp > 0 ? '+' : '') + esc(dg.todayTemp) + '</b> &#176;C'
+           : ' &#183; hoy sin dato');
       if ($('diag-acts')) $('diag-acts').innerHTML =
         (dg.actsCount || 0) + ' &#183; ' + diagCell(dg.act);
     }
@@ -4120,6 +4531,13 @@ function buildSystemPrompt(){
             (t.sleepDetail.estimated ? '; reparto por fases estimado' : '') + ')'
           : '') + '. ' +
       'CTL: ' + t.ctl + ', ATL: ' + t.atl + ', TSB: ' + t.tsb + '.' +
+      (t.temp !== null && t.temp !== undefined
+        ? ' Temperatura de la muñeca: ' + (t.temp > 0 ? '+' : '') + t.temp +
+          ' °C frente a tu base personal' +
+          (t.tempAbs !== null && t.tempAbs !== undefined ? ' (' + t.tempAbs + ' °C absolutos)' : '') +
+          (t.tempCalib ? ', sensor con ' + t.tempCalib + ' días de calibración' : '') +
+          '. Solo Garmin informa de esta señal; súbelo con la HRV y la FC en reposo para descartar infección o sobreentrenamiento.'
+        : '') +
       (t.weight
         ? ' Peso: ' + t.weight + ' kg' +
           (t.bodyFat ? ' (grasa ' + t.bodyFat + '%)' : '') +
@@ -4541,6 +4959,10 @@ wire('metrics-grid', 'click', function(e){
     }
     if (el.getAttribute && el.getAttribute('data-metric') === 'weight') {
       showWeightDetail();
+      return;
+    }
+    if (el.getAttribute && el.getAttribute('data-metric') === 'temp') {
+      showTempDetail();
       return;
     }
     el = el.parentNode;

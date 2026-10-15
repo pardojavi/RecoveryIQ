@@ -85,6 +85,33 @@ const SYNC_OK = payload => ({
 });
 const LOGIN_OK = { ok: true, refreshToken: 'refresh-1', clientId: 'CID', displayName: 'pardojavi' };
 
+/* Payload con temperatura de la muñeca: la forma REAL de
+   /sleep-service/sleep/dailySleepData?date= — la desviación vive en la RAÍZ
+   de la respuesta y el día, en dailySleepDTO. */
+function tempPayload(opts) {
+  opts = opts || {};
+  const p = makePayload(opts);
+  const n = opts.days || 60;
+  const temp = [];
+  for (let i = 0; i < n; i++) {
+    const key = dayKey(i);
+    const dev = (opts.dev !== undefined) ? opts.dev : (i === 0 ? 0.4 : (i % 5) * 0.1 - 0.2);
+    temp.push({
+      dailySleepDTO: {
+        calendarDate: key, sleepTimeSeconds: 27000,
+        deepSleepSeconds: 5400, lightSleepSeconds: 12600,
+        remSleepSeconds: 7200, awakeSleepSeconds: 1800
+      },
+      skinTempDataExists: true,
+      avgSkinTempDeviationC: dev,
+      avgSkinTempDeviationF: dev * 1.8,
+      skinTempCalibrationDays: 21
+    });
+  }
+  p.temp = temp;
+  return p;
+}
+
 let syncPayload = makePayload();
 let lastFetch = null;
 
@@ -583,6 +610,139 @@ ok($('diag-weight').innerHTML.indexOf('HTTP 200') >= 0, 'fila Peso con estado',
    $('diag-weight').innerHTML);
 ok($('diag-counts').textContent.indexOf('peso 60') >= 0,
    'los recuentos incluyen el peso', $('diag-counts').textContent);
+
+console.log('\n== Temperatura de la muñeca: saneados y umbrales ==');
+eq(run('pickTemp({avgSkinTempDeviationC:0.42}).dev'), 0.4, 'desviación en °C → 1 decimal');
+eq(run('pickTemp({avgSkinTempDeviationF:0.72}).dev'), 0.4, 'desviación en °F → pasa a °C');
+eq(run('pickTemp({avgSkinTempDeviationC:99}).dev'), null, 'desviación absurda → descartada');
+eq(run('pickTemp({avgSkinTempDeviationC:null}).dev'), null, 'null → sin dato');
+eq(run('pickTemp({}).dev'), null, 'sin campos de temperatura → null');
+eq(run('pickTemp({skinTemperature:34.26}).abs'), 34.3, 'grados absolutos saneados');
+eq(run('pickTemp({skinTemperature:98.6}).abs'), null, '98,6 no encaja en 25–45 °C');
+eq(run('tempDelta(0.9,null)'), -15, '≥0,8 °C → −15');
+eq(run('tempDelta(0.5,-6)'), -13, '≥0,5 °C con HRV −6 % → −10 y −3 extra');
+eq(run('tempDelta(0.35,null)'), -6, '≥0,3 °C → −6');
+eq(run('tempDelta(0.22,null)'), -3, '≥0,2 °C → −3');
+eq(run('tempDelta(0.1,null)'), 0, 'por debajo de 0,2 °C → sin castigo');
+eq(run('tempDelta(-0.7,null)'), 0, 'más frío que tu base → sin castigo');
+eq(run('tempDelta(null,null)'), null, 'sin dato → null');
+eq(run('normalizeRows([{id:"2026-01-01", tempDev:0.65}])[0].tempDev'), 0.7,
+   'normalizeRows lee la desviación');
+eq(run('normalizeRows([{id:"2026-01-01", skinTemperature:34.4}])[0].tempC'), 34.4,
+   'normalizeRows lee los grados absolutos');
+eq(run('normalizeRows([{id:"2026-01-01", hrv:60}])[0].tempDev'), null,
+   'sin temperatura → null');
+
+console.log('\n== Temperatura: garminToRows() desde dailySleepData ==');
+w.__payloadT = tempPayload();
+const rowsT = run('garminToRows(window.__payloadT)');
+ok(rowsT.length === 60, '60 filas con temperatura', rowsT.length);
+eq(rowsT[rowsT.length - 1].tempDev, 0.4, 'desviación de HOY (raíz de la respuesta)');
+eq(rowsT[rowsT.length - 1].tempCalib, 21, 'días de calibración del sensor');
+ok(rowsT.every(r => r.tempDev !== null), 'todos los días traen temperatura');
+eq(run('garminToRows({temp:[{dailySleepDTO:{calendarDate:todayKey()},' +
+       'skinTempDataExists:false}]}).length'), 0,
+   'sin desviación ni otro dato → no crea fila');
+w.__fOnly = { temp: [{ dailySleepDTO: { calendarDate: dayKey(0) },
+                       avgSkinTempDeviationF: 0.9 }] };
+eq(run('garminToRows(window.__fOnly)[0].tempDev'), 0.5,
+   'solo en °F → 0,9 °F = 0,5 °C');
+
+console.log('\n== Temperatura: entra en el índice ==');
+const gdT = run('(function(){var r=garminToRows(window.__payloadT);' +
+                'return assembleData(r, garminActivities(window.__payloadT));})()');
+eq(gdT.today.temp, 0.4, 'today.temp = desviación de hoy');
+eq(gdT.today.tempDate, dayKey(0), 'fecha del dato de temperatura');
+eq(gdT.today.tempCalib, 21, 'calibración del sensor');
+ok(gdT.today.activityParts.some(p => p.label === 'Temperatura'),
+   'el desglose del día incluye Temperatura',
+   JSON.stringify(gdT.today.activityParts));
+eq(gdT.dailyMap[dayKey(0)].temp, 0.4, 'el mapa diario guarda la temperatura');
+const gdNoT = run('(function(){var r=garminToRows(window.__payload);' +
+                  'return assembleData(r, garminActivities(window.__payload));})()');
+eq(gdNoT.today.recoveryScore - gdT.today.recoveryScore, 9,
+   '+0,4 °C con la HRV hundida descuenta 9 puntos',
+   gdNoT.today.recoveryScore + ' → ' + gdT.today.recoveryScore);
+
+console.log('\n== Temperatura: solo grados absolutos (otras fuentes) ==');
+w.__absRows = [
+  { id: dayKey(0), hrv: 60, restingHR: 50, sleep: 7.5, ctl: 60, atl: 60,
+    tempC: 34.6, tempCalib: 9 },
+  { id: dayKey(1), hrv: 61, restingHR: 50, sleep: 8,   ctl: 60, atl: 60, tempC: 34.0 }
+];
+const absD = run('assembleData(window.__absRows, [])');
+eq(absD.today.tempAbs, 34.6, 'grados absolutos expuestos en today');
+eq(absD.today.tempBaseline, 34.3, 'tempBaseline = media de la ventana');
+eq(absD.today.temp, 0.3, 'desviación efectiva = absoluto − media');
+eq(absD.today.tempCalib, 9, 'calibración del último día con dato');
+eq(absD.dailyMap[dayKey(1)].temp, -0.3, 'el día más frío resta respecto a la media');
+
+console.log('\n== UI: tarjeta de Temperatura en la portada ==');
+run('(function(){var r=garminToRows(window.__payloadT);' +
+    'var d=assembleData(r, garminActivities(window.__payloadT));' +
+    'window.__dataT=d; S.logs=[]; S.isDemo=false; S.source="garmin";' +
+    'initApp(d); showTab("dashboard");})()');
+eq($('metrics-grid').querySelectorAll('.metric').length, 6, '6 tarjetas con peso y temperatura');
+const tmpCard = $('metrics-grid').querySelector('[data-metric="temp"]');
+ok(!!tmpCard, 'la tarjeta Temp. muñeca es pulsable');
+ok(tmpCard && tmpCard.className.indexOf('span2') >= 0, 'la tarjeta ocupa los dos anchos');
+ok($('metrics-grid').textContent.indexOf('Temp. mu') >= 0, 'etiqueta Temp. muñeca visible');
+ok($('insights-list').textContent.indexOf('Temperatura') >= 0,
+   'hay insight de temperatura', $('insights-list').textContent.slice(0, 90));
+
+// Tocar la tarjeta abre su hoja (misma delegación que Sueño y Peso)
+tmpCard.click();
+ok(!!w.document.querySelector('.sheet-overlay'), 'tocar la tarjeta abre la hoja');
+w.document.querySelectorAll('.sheet-overlay').forEach(el => el.remove());
+run('showTempDetail()');
+const tSheet = w.document.querySelector('.sheet-overlay');
+ok(!!tSheet, 'la hoja de Temperatura se abre');
+ok(tSheet && tSheet.textContent.indexOf('Temperatura de la mu') >= 0,
+   'título de la hoja', tSheet && tSheet.textContent.slice(0, 50));
+ok(tSheet && tSheet.textContent.indexOf('Desviaci') >= 0, 'muestra la desviación vs tu base');
+ok(tSheet && tSheet.textContent.indexOf('Calibraci') >= 0, 'muestra la calibración del sensor');
+ok(tSheet && tSheet.textContent.indexOf('infecci') >= 0, 'explica el riesgo de enfermedad');
+ok(!!tSheet.querySelector('.spark'), 'gráfico de evolución de la temperatura');
+ok(!!tSheet.querySelector('.spark-legend'), 'mín/media/máx de la temperatura');
+w.document.querySelectorAll('.sheet-overlay').forEach(el => el.remove());
+
+console.log('\n== UI: temperatura en calendario, informe e IA ==');
+run('showTab("calendar"); showDayDetail(todayKey())');
+ok($('day-detail').textContent.indexOf('Temp. mu') >= 0,
+   'fila de temperatura en el día', $('day-detail').textContent.slice(0, 180));
+run('showTab("report")');
+ok($('report-bars').textContent.indexOf('Temp. mu') >= 0, 'barra de temperatura en el informe');
+eq($('report-form').querySelectorAll('.fstat').length, 7, '7 estadísticas con temperatura');
+ok($('report-recs').textContent.indexOf('Vigila la temperatura') >= 0,
+   'recomendación ligada a la temperatura');
+ok(run('buildSystemPrompt()').indexOf('Temperatura de la muñeca') >= 0,
+   'el prompt de la IA incluye la temperatura');
+ok(run('buildSystemPrompt()').indexOf('<b>') < 0, 'y sigue sin HTML');
+
+console.log('\n== UI: Ajustes informa de la temperatura ==');
+w.__dgT = run('(function(){var r=garminToRows(window.__payloadT);' +
+  'var a=garminActivities(window.__payloadT);' +
+  'return garminDiag({start:"2026-08-01", end:"2026-09-30", diag:{' +
+  'temp:{s:200,k:"dailySleepDTO"}}}, r, a);})()');
+eq(w.__dgT.tempDays, 60, '60 días con temperatura');
+eq(w.__dgT.todayTemp, 0.4, 'temperatura de hoy en el diagnóstico');
+run('S.source="garmin"; S.garmin={refreshToken:"t", clientId:"c",' +
+    ' displayName:"pardojavi", diag:' + JSON.stringify(w.__dgT) + '}; renderSettings();');
+ok($('diag-counts').textContent.indexOf('temp 60') >= 0,
+   'los recuentos incluyen la temperatura', $('diag-counts').textContent);
+ok($('diag-temp').innerHTML.indexOf('HTTP 200') >= 0,
+   'fila de temperatura con estado', $('diag-temp').innerHTML);
+ok($('diag-temp').innerHTML.indexOf('hoy <b>+0.4</b>') >= 0,
+   'muestra la temperatura de HOY', $('diag-temp').innerHTML);
+eq(run('garminWarn(window.__dgT)'), '', 'sin avisos si hay sueño y HRV');
+
+console.log('\n== worker.js pide la temperatura de la muñeca ==');
+const workerSrc = fs.readFileSync('/Users/javier.pardo/RecoveryIQ/worker.js', 'utf8');
+ok(workerSrc.indexOf('/sleep-service/sleep/dailySleepData?date=') >= 0,
+   'consulta dailySleepData por día');
+ok(workerSrc.indexOf('i < 14') >= 0, 'limita a los últimos 14 días');
+ok(/data:\s*\{[^}]*\btemp\b[^}]*\}/.test(workerSrc), 'el sync devuelve temp en data');
+ok(workerSrc.indexOf('tempRows') >= 0, 'cuenta los días con dato para el diagnóstico');
 
 console.log('\n== Errores JS tardíos ==');
 ok(!$('js-err') || !$('js-err').classList.contains('show'), 'ningún error JS en toda la ejecución',
