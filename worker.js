@@ -606,30 +606,38 @@ async function garminSync(body) {
     }
   }
 
-  const jobs = [
-    get('/hrv-service/hrv/daily/' + start + '/' + end),
-    get('/userstats-service/wellness/daily/' + encodeURIComponent(displayName) +
-        '?fromDate=' + start + '&untilDate=' + end + '&metricId=60'),
-    get('/fitnessstats-service/activity/all?startDate=' + start + '&endDate=' + end +
-        '&metric=activityTrainingLoad'),
-    get('/activitylist-service/activities/search/activities?start=0&limit=20' +
-        '&startDate=' + start + '&endDate=' + end),
-    get('/weight-service/weight/dateRange?startDate=' + start + '&endDate=' + end),
-    ...sleepChunks.map(([a, b]) => get('/sleep-service/stats/sleep/daily/' + a + '/' + b)),
-    ...tempDays.map(dt => get('/sleep-service/sleep/dailySleepData?date=' + dt)),
-  ];
+  // Una petición que cae (o que Garmin corta) no debe tumbar la sincronización
+  // entera: se convierte en null y cada bloque decide qué hacer con su hueco.
+  const soft = (path) => get(path).catch(() => null);
+  const jsonOf = async (r, fb) => {
+    if (!r || !r.ok) return fb;
+    try { return await r.json(); } catch (e) { return fb; }
+  };
 
-  let results;
-  try {
-    results = await Promise.all(jobs);
-  } catch (e) {
+  // PRIMERA TANDA — lo que la app NECESITA para funcionar: HRV, FC en reposo,
+  // carga, actividades, peso y los trozos de sueño. Si aquí falta algo no hay
+  // nada que mostrar, así que sí se avisa.
+  const core = await Promise.all([
+    soft('/hrv-service/hrv/daily/' + start + '/' + end),
+    soft('/userstats-service/wellness/daily/' + encodeURIComponent(displayName) +
+        '?fromDate=' + start + '&untilDate=' + end + '&metricId=60'),
+    soft('/fitnessstats-service/activity/all?startDate=' + start + '&endDate=' + end +
+        '&metric=activityTrainingLoad'),
+    soft('/activitylist-service/activities/search/activities?start=0&limit=20' +
+        '&startDate=' + start + '&endDate=' + end),
+    soft('/weight-service/weight/dateRange?startDate=' + start + '&endDate=' + end),
+    ...sleepChunks.map(([a, b]) =>
+      soft('/sleep-service/stats/sleep/daily/' + a + '/' + b)),
+  ]);
+
+  if (core.every(r => !r)) {
     return json({ ok: false, code: 'NETWORK', error: 'Error consultando los datos de Garmin.' }, 502);
   }
 
   // Si Garmin ha rechazado casi todas las llamadas, avisamos en vez de devolver
   // vacío (que en la app se vería como "no hay datos en tu cuenta").
-  const denied = results.filter(r => r && (r.status === 401 || r.status === 403 || r.status === 429));
-  if (denied.length && denied.length >= results.length - 1) {
+  const denied = core.filter(r => r && (r.status === 401 || r.status === 403 || r.status === 429));
+  if (denied.length && denied.length >= core.length - 1) {
     const s = denied[0].status;
     if (s === 429) {
       return json({ ok: false, code: 'RATE_LIMIT',
@@ -643,10 +651,25 @@ async function garminSync(body) {
       error: 'Garmin bloqueó las peticiones con su control anti-bots. Entra una vez en connect.garmin.com desde tu navegador y reintenta.' }, 403);
   }
 
-  const jsonOf = async (r, fb) => {
-    if (!r || !r.ok) return fb;
-    try { return await r.json(); } catch (e) { return fb; }
-  };
+  // Nada del núcleo ha salido bien (500 en toda la línea, p. ej.): no hay con
+  // qué calcular el índice, así que se avisa en vez de devolver vacío.
+  if (core.every(r => !r || !r.ok)) {
+    return json({ ok: false, code: 'NETWORK', error: 'Error consultando los datos de Garmin.' }, 502);
+  }
+
+  // SEGUNDA TANDA — temperatura de la muñeca. Va aparte, ya resuelto lo
+  // esencial y a trozos de 3: si Garmin la bloquea o la limita, la app sigue
+  // recibiendo HRV, sueño y peso. Nunca se convierte en error.
+  const temp = [], tempStat = [];
+  const TEMP_SLOT = 3;
+  for (let i = 0; i < tempDays.length; i += TEMP_SLOT) {
+    const got = await Promise.all(tempDays.slice(i, i + TEMP_SLOT).map(dt =>
+      get('/sleep-service/sleep/dailySleepData?date=' + dt).catch(() => null)));
+    for (const r of got) {
+      tempStat.push((r && r.status) || 0);
+      temp.push(await jsonOf(r, null));
+    }
+  }
 
   const kindOf = (x) => x === null || x === undefined ? 'sin-cuerpo'
     : Array.isArray(x) ? 'array(' + x.length + ')'
@@ -725,16 +748,13 @@ async function garminSync(body) {
   // Se devuelven los JSON SIN tocar. Toda la interpretación de "cápsulas"
   // (array plano, {data:[…]}, {hrvData:[{hrvSummary:{…}}]}, trozos de sueño…)
   // vive en la app, que es donde está cubierta por los tests de normalización.
-  const hrv = await jsonOf(results[0], null);
-  const rhr = await jsonOf(results[1], null);
-  const load = await jsonOf(results[2], null);
-  const activities = await jsonOf(results[3], null);
-  const weight = await jsonOf(results[4], null);
+  const hrv = await jsonOf(core[0], null);
+  const rhr = await jsonOf(core[1], null);
+  const load = await jsonOf(core[2], null);
+  const activities = await jsonOf(core[3], null);
+  const weight = await jsonOf(core[4], null);
   const sleep = [];
-  for (let i = 0; i < sleepChunks.length; i++) sleep.push(await jsonOf(results[5 + i], null));
-  const TEMP0 = 5 + sleepChunks.length;   // índice del primer dailySleepData
-  const temp = [];
-  for (let i = 0; i < tempDays.length; i++) temp.push(await jsonOf(results[TEMP0 + i], null));
+  for (let i = 0; i < sleepChunks.length; i++) sleep.push(await jsonOf(core[5 + i], null));
 
   // Si el endpoint por rango no ha traído NI UN día de sueño, se reintenta con
   // el endpoint de un solo día (el que usa python-garminconnect: get_sleep_data)
@@ -767,7 +787,7 @@ async function garminSync(body) {
 
   // Diagnóstico: qué devolvió cada endpoint. La app lo guarda y lo muestra en
   // Ajustes, para poder corregirlo sin adivinar.
-  const statusOf = (i) => (results[i] && results[i].status) || 0;
+  const statusOf = (i) => (core[i] && core[i].status) || 0;
   const weightRows = rowsOfWeight(weight);
   // Temperatura de la muñeca: cuántos días traen desviación real y cómo ha ido
   // el último dailySleepData (el de hoy, que es el que más tarda en llegar).
@@ -791,7 +811,7 @@ async function garminSync(body) {
       k: kindOfSleep(sleep[i]),
     })),
     temp: tempDays.length
-      ? { s: statusOf(TEMP0 + tempDays.length - 1),
+      ? { s: tempStat[tempStat.length - 1] || 0,
           k: kindOf(temp.find(x => x && typeof x === 'object') || null) }
       : null,
     tempRows,

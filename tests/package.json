@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Suites de jsdom de RecoveryIQ (test-smoke.mjs + test-garmin.mjs)",
+  "description": "Suites de jsdom de RecoveryIQ (test-smoke.mjs + test-garmin.mjs) y del worker (test-worker.mjs)",
   "scripts": {
-    "test": "node test-smoke.mjs && node test-garmin.mjs"
+    "test": "node test-smoke.mjs && node test-garmin.mjs && node test-worker.mjs"
   },
   "devDependencies": {
     "jsdom": "22.1.0"

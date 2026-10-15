@@ -609,9 +609,9 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 
 ## 9. Verificación
 
-Dos suites de jsdom sobre `recovery-app.html` (**426 aserciones, 0 fallos**,
-0 errores en tiempo de ejecución). Están en `tests/` (`npm install` y
-`node test-smoke.mjs` / `node test-garmin.mjs`).
+Tres suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
+(**458 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+`tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
 
@@ -679,6 +679,24 @@ Dos suites de jsdom sobre `recovery-app.html` (**426 aserciones, 0 fallos**,
 - Conexión completa: login, ida y vuelta de **MFA** (sin mandar la contraseña en
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
+
+### `test-worker.mjs` — 32 aserciones
+
+La temperatura hay que pedirla día a día (`dailySleepData`) y Garmin la limita o
+la bloquea con facilidad, así que el worker la lanza en una **segunda tanda
+aislada**, después de haber resuelto lo esencial y a trozos de tres. Carga el
+`worker.js` real con un doble de la API de Garmin y comprueba que eso se
+respete:
+
+- Con la temperatura devolviendo **403**, la sincronización sigue respondiendo
+  `ok:true` con HRV y los 3 trozos de sueño, `diag.temp.s = 403` y `tempRows = 0`.
+- Con la temperatura correcta se devuelven los 14 días y su desviación intacta.
+- **Nunca** se lanza una petición de temperatura mientras el núcleo sigue
+  pendiente, y van a ratos de 3 como máximo.
+- Una petición del núcleo que falla en red deja su hueco vacío sin tumbar nada;
+  si **todo** el núcleo cae se devuelve `NETWORK` (502) y con 401 `REFRESH_FAILED`.
+- Presupuesto: 24 peticiones en total (token + perfil + 8 de núcleo + 14 de
+  temperatura), siempre por debajo del límite de 50 del plan Free.
 
 Además, `node --check` sobre el bloque `<script>` del HTML y sobre `worker.js`.
 
