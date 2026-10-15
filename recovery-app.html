@@ -3424,15 +3424,42 @@ function friendlyError(e){
   return esc(m);
 }
 
-window.onerror = function(msg, src, line){
+/* La barra roja solo se enseña cuando dice algo que se pueda leer y arreglar. */
+function jsErr(html){
   var el = $('js-err');
-  if (el) {
-    el.innerHTML = 'JS ERROR: ' + esc(msg) + ' &#183; l&#237;nea ' + line;
-    el.classList.add('show');
-    setTimeout(function(){ el.classList.remove('show'); }, 6000);
+  if (!el) return;
+  el.innerHTML = html;
+  el.classList.add('show');
+  setTimeout(function(){ el.classList.remove('show'); }, 6000);
+}
+
+window.onerror = function(msg, src, line){
+  // "Script error." con línea 0 es el mensaje opaco que el navegador da cuando el
+  // fallo viene de otro origen o de una extensión de Safari instalada: no dice ni
+  // qué ni dónde. Se manda a consola y no se asusta con un rojo que no dice nada.
+  if (!line && (!msg || msg === 'Script error.')) {
+    if (window.console && console.warn) {
+      console.warn('[RecoveryIQ] ' + (msg || 'error sin detalle') + (src ? ' · ' + src : ''));
+    }
+    return false;
   }
+  jsErr('JS ERROR: ' + esc(msg) + ' &#183; l&#237;nea ' + line);
   return false;
 };
+
+/* Un recurso que no carga (icono, hoja de estilos, fuente) con URL conocida: es
+   lo único que apunta a un culpable concreto, así que se nombra. Se escucha en
+   fase de captura porque los errores de recursos no burbujean hasta window. */
+var jsErrSeen = {};
+window.addEventListener('error', function(e){
+  var t = e && e.target;
+  if (!t || typeof t.tagName !== 'string') return;
+  var url = t.src || t.href || '';
+  if (!url || jsErrSeen[url]) return;          // una sola vez por recurso
+  jsErrSeen[url] = 1;
+  jsErr('RECURSO: ' + esc(String(t.tagName).toLowerCase() + ' no carga') +
+        ' &#183; ' + esc(url));
+}, true);
 
 /* ---------- 9. NAVEGACIÓN ---------- */
 function showTab(tab){
