@@ -71,6 +71,18 @@ function respond(u, o) {
     return J({ avgSkinTempDeviationC: 0.4, skinTempCalibrationDays: 30,
                dailySleepDTO: { calendarDate: '2026-10-10' } });
   }
+  if (u.indexOf('dailyHeartRate') >= 0) {            // avance del día: FC intradía
+    if (o.dayStatus !== 200) return J({ message: 'denied' }, o.dayStatus);
+    return J({ calendarDate: '2026-10-15', restingHeartRate: 52, maxHeartRate: 148,
+               minHeartRate: 48,
+               heartRateValues: [[Date.UTC(2026, 9, 15, 10), 62],
+                                 [Date.UTC(2026, 9, 15, 10, 5), 120],
+                                 [Date.UTC(2026, 9, 15, 10, 10), 64]] });
+  }
+  if (u.indexOf('usersummary-service') >= 0) {       // avance del día: pasos
+    if (o.dayStatus !== 200) return J({ message: 'denied' }, o.dayStatus);
+    return J({ calendarDate: '2026-10-15', totalSteps: 8421 });
+  }
   if (u.indexOf('hrv-service') >= 0) {               // núcleo: configurable
     if (o.flaky === 'hrv') throw new Error('network');
     if (o.coreStatus !== 200) return J({ message: 'denied' }, o.coreStatus);
@@ -95,9 +107,11 @@ function harness(o) {
   globalThis.fetch = (url) => {
     const u = String(url);
     const isTemp = u.indexOf('dailySleepData') >= 0;
+    const isDay = u.indexOf('dailyHeartRate') >= 0 ||
+                  u.indexOf('usersummary-service') >= 0;
     // "núcleo" = las peticiones que la app necesita: las 5 + los trozos de sueño.
-    // Se excluyen el token de Garmin y el perfil, que van por su cuenta.
-    const isCore = !isTemp &&
+    // Se excluyen el token de Garmin, el perfil y el avance del día, que van aparte.
+    const isCore = !isTemp && !isDay &&
       u.indexOf('diauth.garmin.com') < 0 &&
       u.indexOf('userprofile-service') < 0;
     st.calls.push(u);
@@ -108,7 +122,7 @@ function harness(o) {
       if (st.tempInflight > st.maxTempInflight) st.maxTempInflight = st.tempInflight;
       if (st.corePending > 0) st.tempOverlap++;     // ¡orden violado!
     }
-    const delay = isCore ? 6 : 0;
+    const delay = (isCore || isDay) ? 6 : 0;
     return new Promise((res, rej) => setTimeout(() => {
       if (isCore) st.corePending--;
       if (isTemp) st.tempInflight--;
@@ -121,7 +135,7 @@ function harness(o) {
 async function sync(opts) {
   // Normaliza: sin esto, `o.coreStatus !== 200` sería cierto cuando la opción
   // no existe y los fixtures devolverían cuerpos vacíos.
-  const o = Object.assign({ coreStatus: 200, tempStatus: 200 }, opts || {});
+  const o = Object.assign({ coreStatus: 200, tempStatus: 200, dayStatus: 200 }, opts || {});
   const st = harness(o);
   const r = await worker.fetch(new ShimRequest('https://proxy.example/garmin', {
     method: 'POST',
@@ -135,10 +149,16 @@ async function sync(opts) {
 }
 
 const TEMP_CALLS = (st) => st.calls.filter(u => u.indexOf('dailySleepData') >= 0).length;
-// Núcleo = las 5 peticiones fijas + los trozos de sueño. El token de Garmin y
-// el perfil van aparte: no son datos del índice.
+// Avance del día: los 2 endpoints que solo pide HOY (FC intradía + pasos)
+const DAY_CALLS = (st) => st.calls.filter(u =>
+  u.indexOf('dailyHeartRate') >= 0 ||
+  u.indexOf('usersummary-service') >= 0).length;
+// Núcleo = las 5 peticiones fijas + los trozos de sueño. El token de Garmin,
+// el perfil y el avance del día van aparte: no son datos del índice histórico.
 const CORE_CALLS = (st) => st.calls.filter(u =>
   u.indexOf('dailySleepData') < 0 &&
+  u.indexOf('dailyHeartRate') < 0 &&
+  u.indexOf('usersummary-service') < 0 &&
   u.indexOf('diauth.garmin.com') < 0 &&
   u.indexOf('userprofile-service') < 0).length;
 const AUTH_CALLS = (st) => st.calls.filter(u =>
@@ -158,7 +178,8 @@ console.log('\n== La temperatura bloqueada (403) no rompe la sincronización =='
   eq(body.data.temp.every(x => x === null), true, 'todas devolvieron vacío sin romper nada');
   eq(TEMP_CALLS(st), 14, '14 peticiones de temperatura');
   eq(CORE_CALLS(st), 8, '8 peticiones de núcleo (5 + 3 de sueño)');
-  eq(st.total, 24, '24 peticiones en total (token + perfil + 8 de núcleo + 14 de temperatura)');
+  eq(DAY_CALLS(st), 2, '2 peticiones del avance del día (FC intradía + pasos)');
+  eq(st.total, 26, '26 peticiones en total (token + perfil + 8 de núcleo + 14 de temperatura + 2 del día)');
   eq(st.maxTempInflight <= 3, true, 'la temperatura va a ratos de 3 como máximo', st.maxTempInflight);
   eq(st.tempOverlap, 0, 'y NUNCA se lanza mientras el núcleo sigue pendiente');
 }
@@ -209,10 +230,35 @@ console.log('\n== Presupuesto del plan Free (50 peticiones) ==');
 {
   const { st } = await sync({ tempStatus: 200 });
   ok(st.total <= 50, 'se queda por debajo de 50', st.total);
-  // Núcleo + temperatura + token + perfil = todo lo que se pidió.
-  ok(st.total === CORE_CALLS(st) + TEMP_CALLS(st) + AUTH_CALLS(st),
+  // Núcleo + temperatura + avance del día + token + perfil = todo lo pedido.
+  ok(st.total === CORE_CALLS(st) + TEMP_CALLS(st) + DAY_CALLS(st) + AUTH_CALLS(st),
      'sin peticiones fantasma', st.total + ' vs ' +
-     (CORE_CALLS(st) + TEMP_CALLS(st) + AUTH_CALLS(st)));
+     (CORE_CALLS(st) + TEMP_CALLS(st) + DAY_CALLS(st) + AUTH_CALLS(st)));
+}
+
+/* ================= 7. Avance del día (FC intradía + pasos) ================= */
+console.log('\n== El avance del día llega y su bloqueo no rompe nada ==');
+{
+  const { status, body } = await sync({ dayStatus: 200 });
+  eq(status, 200, 'la sincronización responde 200');
+  eq(body.ok, true, 'ok:true');
+  eq(body.diag.hrday.s, 200, 'FC intradía: HTTP 200');
+  eq(body.diag.hrday.n, 3, 'y la serie trae 3 muestras');
+  eq(body.diag.steps.s, 200, 'pasos: HTTP 200');
+  eq(body.diag.steps.n, 1, 'y hay dato de pasos');
+  eq(body.data.hrday.calendarDate, '2026-10-15', 'la serie pasa sin tocar');
+  eq(body.data.hrday.heartRateValues.length, 3, 'con sus 3 puntos');
+  eq(body.data.summary.totalSteps, 8421, 'y los pasos también');
+}
+{
+  const { status, body } = await sync({ dayStatus: 403 });
+  eq(status, 200, 'si Garmin bloquea el avance del día, la sync sigue viva');
+  eq(body.ok, true, 'ok:true');
+  ok(!!body.data.hrv, 'el núcleo llega igual');
+  eq(body.diag.hrday.s, 403, 'el diagnóstico dice 403 en FC intradía');
+  eq(body.diag.steps.s, 403, 'y 403 en pasos');
+  eq(body.data.hrday, null, 'sin serie de FC…');
+  eq(body.data.summary, null, 'y sin pasos, pero sin romper nada');
 }
 
 /* --------------------------------------- */

@@ -112,6 +112,43 @@ function tempPayload(opts) {
   return p;
 }
 
+/* Payload con los 2 endpoints SOLO de hoy del avance del día:
+   /wellness-service/wellness/dailyHeartRate/?date= (serie de FC intradía) y
+   /usersummary-service/usersummary/daily/?calendarDate= (pasos).
+   La serie trae un pico de 145 bpm a las 13:00 (fuera de la sesión de las
+   08:00) y 12.000 pasos por defecto. `gmt:true` manda los ts como instantes
+   reales de medianoche GMT en vez del convenio *Local. */
+function dayPayload(opts) {
+  opts = opts || {};
+  const p = makePayload(opts);
+  const key = dayKey(0);
+  const kp = key.split('-');
+  const tz = opts.tz !== undefined ? opts.tz : 2;               // huso: España
+  const locMid = Date.UTC(+kp[0], +kp[1] - 1, +kp[2], 0, 0, 0); // medianoche local
+  const gmtMid = locMid - tz * 3600000;                          // instante GMT real
+  const ts0 = opts.gmt ? gmtMid : locMid;
+  const hr = [];
+  for (let m = 0; m < 24 * 60; m += 15) {       // una muestra cada 15 min
+    const h = Math.floor(m / 60);
+    const bpm = (h === 13) ? 145 : 56 + (h % 5); // pico de 145 a las 13:00
+    hr.push([ts0 + m * 60000, bpm]);
+  }
+  p.hrday = {
+    calendarDate: key,
+    startTimestampLocal: locMid,
+    startTimestampGmt: gmtMid,
+    heartRateValues: hr,
+    restingHeartRate: 52,
+    maxHeartRate: 145,
+    minHeartRate: 56
+  };
+  p.summary = {
+    calendarDate: key,
+    totalSteps: opts.steps !== undefined ? opts.steps : 12000
+  };
+  return p;
+}
+
 let syncPayload = makePayload();
 let lastFetch = null;
 
@@ -743,6 +780,211 @@ ok(workerSrc.indexOf('/sleep-service/sleep/dailySleepData?date=') >= 0,
 ok(workerSrc.indexOf('i < 14') >= 0, 'limita a los últimos 14 días');
 ok(/data:\s*\{[^}]*\btemp\b[^}]*\}/.test(workerSrc), 'el sync devuelve temp en data');
 ok(workerSrc.indexOf('tempRows') >= 0, 'cuenta los días con dato para el diagnóstico');
+
+console.log('\n== Avance del día: garminHrDay() (GMT vs local) ==');
+w.__payloadD = dayPayload();
+const hrD = run('garminHrDay(window.__payloadD)');
+eq(hrD.date, dayKey(0), 'la serie es de HOY');
+eq(hrD.pts.length, 96, '96 muestras (cada 15 min)', hrD && hrD.pts.length);
+eq(hrD.hourly.length, 24, '24 cubetas horarias', hrD && hrD.hourly.length);
+eq(hrD.avg, 62, 'media del día');
+eq(hrD.max, 145, 'máximo = el pico de las 13:00');
+eq(hrD.min, 56, 'mínimo');
+eq(hrD.now, 59, 'FC de la última muestra');
+eq(hrD.rest, 52, 'FC de reposo de la respuesta');
+eq(hrD.hourly[13].b, 145, 'la cubeta de las 13 h está en su hora');
+ok(Math.abs(hrD.hourly[13].h - 13.5) < 1e-9, 'centrada a mitad de hora');
+// ts como instantes reales de medianoche GMT: mismas horas al leerlos
+w.__payloadG = dayPayload({ gmt: true });
+const hrG = run('garminHrDay(window.__payloadG)');
+eq(hrG.pts.length, 96, 'serie GMT: mismas 96 muestras');
+eq(hrG.now, 59, 'y la última se lee igual');
+eq(hrG.hourly[13].b, 145, 'y el pico cae en la misma cubeta');
+// …y con un huso negativo (América) también
+w.__payloadGm5 = dayPayload({ gmt: true, tz: -5 });
+const hrM5 = run('garminHrDay(window.__payloadGm5)');
+eq(hrM5.now, 59, 'serie GMT con huso -5: se lee igual');
+eq(run('garminHrDay({})'), null, 'sin serie → null');
+eq(run('garminHrDay({hrday:{calendarDate:todayKey(), heartRateValues:[[1,0]]}})'),
+   null, 'todo a cero → null');
+
+console.log('\n== Avance del día: unidades de pasos y FC ==');
+eq(run('walkLoadOf(3500, [])'), 0, '3500 pasos (gestión diaria) → 0 puntos');
+eq(run('walkLoadOf(9000, [])'), 10, '9000 → (9000−4000)×0,002 = 10');
+eq(run('walkLoadOf(9000, [{type:"walking", duration:3600}])'), 0,
+   'la hora de caminata explica 6000 pasos → 0');
+eq(run('walkLoadOf(15000, [{type:"walking", duration:3600}])'), 10,
+   '15000 con la caminata → (15000−6000−4000)×0,002 = 10');
+eq(run('hrLoadOf(null, 50, []).load'), 0, 'sin serie de FC → 0');
+w.__hrSyn = { pts: [{ h: 8.5, b: 60 }, { h: 9, b: 130 },
+                    { h: 9.25, b: 130 }, { h: 9.5, b: 60 }], rest: 52, avg: 70 };
+const hrSyn = run('hrLoadOf(window.__hrSyn, 52, [])');
+eq(hrSyn.mins, 10, '2 cubetas de 5 min con FC de 130 = 10 min');
+eq(hrSyn.load, 0.5, '10 min × 0,05 = 0,5 pts');
+eq(hrSyn.marks.length, 1, 'una sola marca horaria');
+eq(hrSyn.marks[0].mins, 10, '…con los 10 min anotados');
+w.__actsWalk = [{ type: 'walking', duration: 3600,
+                  start_date_local: dayKey(0) + ' 09:00:00' }];
+eq(run('hrLoadOf(window.__hrSyn, 52, window.__actsWalk).mins'), 0,
+   'dentro de la ventana de la sesión → no cuenta (no es "cansancio invisible")');
+eq(run('advanceLoad({hrDay:null, steps:0, restingHR:50}, null)'), null,
+   'sin pasos ni serie → sin avance');
+eq(run('advanceLoad({hrv:64, restingHR:52, sleep:7.5}, null)'), null,
+   'la fila de ejemplo del humo tampoco tiene avance');
+
+console.log('\n== Avance del día: entra en el índice ==');
+const gdD = run('(function(){var r=garminToRows(window.__payloadD);' +
+                'window.__rowsD = r; window.__actsD = garminActivities(window.__payloadD);' +
+                'window.__dataD = assembleData(r, window.__actsD);' +
+                'return window.__dataD;})()');
+eq(w.__rowsD.length, 60, '60 filas: la serie de hoy no inventa días');
+eq(w.__rowsD[59].steps, 12000, 'los pasos se cuelgan de la fila de HOY');
+ok(!!w.__rowsD[59].hrDay, 'la serie de FC también');
+eq(w.__rowsD[0].steps, null, 'los días anteriores siguen sin pasos');
+eq(gdD.today.steps, 12000, 'pasos de hoy en today');
+eq(gdD.today.advance.walk, 16, '(12000−4000)×0,002 = 16 pts de caminata');
+eq(gdD.today.advance.hr, 1, '20 min de FC alta = 1,0 pts');
+eq(gdD.today.advance.mins, 20, '20 min con FC alta');
+eq(gdD.today.advance.total, 17, 'carga total del avance = 17');
+eq(gdD.today.advance.max, 145, 'máximo de la serie');
+eq(gdD.today.advance.now, 59, 'FC de ahora');
+eq(gdD.today.advance.avg, 62, 'media del día');
+eq(gdD.today.advance.hourly.length, 24, '24 cubetas para la banda de la gráfica');
+eq(gdD.today.advance.marks.length, 1, 'un tramo de FC alta a las 13 h');
+eq(gdD.today.advance.marks[0].mins, 20, '…de 20 minutos');
+eq(gdD.today.sessionLoad, 39, 'la carga de sesiones es solo la del ciclismo (60×0,65)');
+eq(gdD.dailyMap[dayKey(0)].load, 56, 'carga total = 39 de sesión + 17 de avance');
+eq(gdD.today.activityDelta, -8.6, 'la sesión se lleva −8,6 (39 de 56)');
+eq(gdD.today.advanceDelta, -3.7, 'el avance se lleva −3,7 (17 de 56)');
+ok(gdD.today.activityParts.some(p => p.label === 'Actividad de hoy'),
+   'el desglose explica la sesión');
+ok(gdD.today.activityParts.some(p => p.label === 'Avance del día'),
+   'y también el avance del día');
+ok(gdD.today.recoveryScore < gdD.today.morningScore,
+   'al despertar no se contaba ni la sesión ni el avance',
+   gdD.today.morningScore + ' vs ' + gdD.today.recoveryScore);
+
+console.log('\n== Avance del día: casos extremos ==');
+w.__sumOnly = { summary: { calendarDate: dayKey(0), totalSteps: 5000 } };
+eq(run('garminToRows(window.__sumOnly).length'), 1, 'solo pasos → crea la fila de hoy');
+eq(run('garminToRows(window.__sumOnly)[0].steps'), 5000, '…con los pasos leídos');
+// Día con pasos pero sin ninguna sesión registrada: TODO el impacto es del avance
+w.__payloadW = dayPayload({ noLoad: true });
+const gdW = run('(function(){var r=garminToRows(window.__payloadW);' +
+                'window.__dataW = assembleData(r, garminActivities(window.__payloadW));' +
+                'return window.__dataW;})()');
+eq(gdW.today.sessionLoad, 0, 'sin sesiones registradas');
+eq(gdW.today.activityDelta, 0, 'sin parte de actividad');
+eq(gdW.today.advanceDelta, -3.7, 'el impacto entero (17 pts × 0,22) es del avance');
+ok(!gdW.today.activityParts.some(p => p.label === 'Actividad de hoy'),
+   'el desglose NO inventa sesión');
+ok(gdW.today.activityParts.some(p => p.label === 'Avance del día'),
+   'pero sí explica el avance');
+// Un día con muchos más pasos pesa más en el índice
+w.__payloadH = dayPayload({ steps: 24000 });
+const gdH = run('(function(){var r=garminToRows(window.__payloadH);' +
+                'return assembleData(r, garminActivities(window.__payloadH));})()');
+eq(gdH.today.advance.total, 41, '24000 pasos → 40 pts de caminata + 1 de FC');
+eq(gdH.today.activityDelta, -7.8, 'la sesión ya no domina el impacto');
+eq(gdH.today.advanceDelta, -8.2, 'el avance pesa más que la sesión');
+ok(gdH.today.recoveryScore < gdD.today.recoveryScore,
+   'más pasos = índice más bajo',
+   gdH.today.recoveryScore + ' vs ' + gdD.today.recoveryScore);
+
+console.log('\n== Avance del día: la curva de Evolución lo nota ==');
+const eNoAdv = run('energyAt(20, 7, 23, 78, [], null)');
+ok(run('energyAt(20, 7, 23, 78, [], {walk:10, marks:[]})') < eNoAdv,
+   'los pasos restan energía por la tarde');
+ok(run('energyAt(20, 7, 23, 78, [], {walk:0, marks:[{h:12, mins:60}]})') < eNoAdv,
+   'un tramo de FC alta también');
+eq(run('energyAt(7, 7, 23, 78, [], {walk:10, marks:[]})'), 78,
+   'a la hora de levantarse, todavía sin efecto');
+eq(run('energyAt(20, 7, 23, 78, [], undefined)'), eNoAdv,
+   'el sexto parámetro sigue siendo opcional');
+
+console.log('\n== UI: Evolución con la banda de FC del día ==');
+run('S.logs=[]; S.isDemo=false; S.source="garmin";' +
+    'initApp(window.__dataD); showTab("evo");');
+eq($('evo-hero').querySelectorAll('svg').length, 1,
+   'un solo <svg> con la curva y la banda (requisito del humo)');
+const evoSvg = $('evo-hero').querySelector('svg').innerHTML;
+ok(evoSvg.indexOf('f472b6') >= 0, 'la banda de FC intradía va en rosa');
+ok(evoSvg.indexOf('paint-order') >= 0, 'la etiqueta del "ahora" lleva halo');
+ok($('evo-hero').textContent.indexOf('ndice ahora') >= 0,
+   'la cabecera dice Índice ahora', $('evo-hero').textContent.slice(0, 60));
+ok($('evo-hero').textContent.indexOf('Avance del d') >= 0,
+   'la columna incluye Avance del día');
+ok($('evo-hero').textContent.indexOf('FC intrad') >= 0,
+   'la leyenda explica la banda de FC');
+ok($('evo-parts').textContent.indexOf('Avance del d') >= 0,
+   'el desglose explica el avance');
+ok($('evo-parts').textContent.indexOf('Actividad de hoy') >= 0,
+   'y la sesión');
+ok($('evo-acts').textContent.indexOf('Carga total de hoy') >= 0,
+   'la caja de sesiones suma la carga total');
+ok($('evo-acts').textContent.indexOf('Del avance del d') >= 0,
+   '…y desglosa la del avance');
+// Sin sesión: los pasos y la FC del día se ven igualmente
+run('S.data=window.__dataW; showTab("evo");');
+ok($('evo-acts').textContent.indexOf('Pasos de hoy') >= 0,
+   'sin sesiones, los pasos de HOY se ven igualmente',
+   $('evo-acts').textContent.slice(0, 90));
+ok($('evo-acts').textContent.indexOf('Sin sesiones registradas hoy') >= 0,
+   'sigue diciendo que no hay sesión');
+ok($('evo-acts').textContent.indexOf('ya cuenta') >= 0,
+   '…pero explica que el día ya ha dejado huella');
+ok($('evo-parts').textContent.indexOf('Avance del d') >= 0,
+   'el desglose también lo explica');
+
+console.log('\n== Avance del día: conclusiones, IA y Ajustes ==');
+run('S.data=window.__dataD; showTab("dashboard");');
+ok($('insights-list').textContent.indexOf('El d') >= 0,
+   'hay insight sobre el avance del día',
+   $('insights-list').textContent.slice(0, 120));
+ok($('insights-list').textContent.indexOf('pasos') >= 0,
+   'y menciona los pasos');
+ok($('insights-list').textContent.indexOf('Hoy ya has entrenado') >= 0,
+   'la sesión de hoy también se explica');
+const prD = run('buildSystemPrompt()');
+ok(prD.indexOf('Avance del d') >= 0, 'el prompt de la IA incluye el avance');
+ok(prD.indexOf('12000 pasos') >= 0, '…con los pasos de hoy');
+ok(prD.indexOf('20 min con FC alta') >= 0, '…y los minutos de FC alta');
+ok(prD.indexOf('<b>') < 0, 'y sigue sin HTML');
+
+w.__dgD = run('(function(){var r=garminToRows(window.__payloadD);' +
+  'var a=garminActivities(window.__payloadD);' +
+  'return garminDiag({start:"2026-01-01", end:"' + dayKey(0) + '", diag:{' +
+  'hrday:{s:200,k:"calendarDate",n:96}, steps:{s:200,k:"calendarDate",n:1}}}, r, a);})()');
+eq(w.__dgD.hrDayDays, 1, '1 día con serie de FC (hoy)');
+eq(w.__dgD.stepsDays, 1, '1 día con pasos (hoy)');
+eq(w.__dgD.todaySteps, 12000, 'pasos de hoy en el diagnóstico');
+eq(w.__dgD.todayHrNow, 59, 'FC de ahora en el diagnóstico');
+run('S.source="garmin"; S.garmin={refreshToken:"t", clientId:"c",' +
+    ' displayName:"pardojavi", diag:' + JSON.stringify(w.__dgD) + '}; renderSettings();');
+ok($('diag-hr').innerHTML.indexOf('HTTP 200') >= 0,
+   'fila de FC intradía con estado', $('diag-hr').innerHTML);
+ok($('diag-hr').innerHTML.indexOf('<b>96</b> muestras') >= 0,
+   'número de muestras de la serie');
+ok($('diag-hr').innerHTML.indexOf('ahora <b>59</b> bpm') >= 0,
+   'y la FC de ahora');
+ok($('diag-steps').innerHTML.indexOf('HTTP 200') >= 0,
+   'fila de pasos con estado', $('diag-steps').innerHTML);
+ok($('diag-steps').innerHTML.indexOf('hoy <b>12000</b> pasos') >= 0,
+   'pasos de hoy en Ajustes');
+eq(run('garminWarn(window.__dgD)'), '', 'sin avisos si hay sueño y HRV');
+
+console.log('\n== worker.js pide el avance del día (solo para hoy) ==');
+ok(workerSrc.indexOf('/wellness-service/wellness/dailyHeartRate/?date=') >= 0,
+   'consulta dailyHeartRate por día');
+ok(workerSrc.indexOf('/usersummary-service/usersummary/daily/?calendarDate=') >= 0,
+   'consulta usersummary/daily por día');
+ok(/data:\s*\{[^}]*\bhrday\b[^}]*\}/.test(workerSrc), 'el sync devuelve hrday en data');
+ok(/data:\s*\{[^}]*\bsummary\b[^}]*\}/.test(workerSrc), 'el sync devuelve summary en data');
+ok(workerSrc.indexOf('hrday.heartRateValues.length') >= 0,
+   'cuenta las muestras para el diagnóstico');
+ok(workerSrc.indexOf('totalSteps') >= 0, 'detecta si hay dato de pasos');
+ok(workerSrc.indexOf('TERCERA TANDA') >= 0,
+   'van en su propia tanda, después del núcleo y la temperatura');
 
 console.log('\n== Errores JS tardíos ==');
 ok(!$('js-err') || !$('js-err').classList.contains('show'), 'ningún error JS en toda la ejecución',

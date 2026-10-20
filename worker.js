@@ -556,8 +556,9 @@ async function garminRefresh(refreshToken, clientId) {
   return { error: 'REFRESH_FAILED' };
 }
 
-/** Trae los 7 datos que necesita la app (5 + trozos de sueño + 14 días de
- *  temperatura; límite del plan Free: 50 peticiones por invocación). */
+/** Trae los datos que necesita la app (5 + trozos de sueño + 14 días de
+ *  temperatura + FC intradía y pasos de HOY; límite del plan Free: 50
+ *  peticiones por invocación → 25 con un rango de 60 días). */
 async function garminSync(body) {
   const start = String(body.start || '');
   const end = String(body.end || '');
@@ -670,6 +671,16 @@ async function garminSync(body) {
       temp.push(await jsonOf(r, null));
     }
   }
+
+  // TERCERA TANDA — avance del DÍA: FC intradía y pasos, SOLO para hoy (2
+  // peticiones más). Mismo criterio que la temperatura: si Garmin las
+  // bloquea, la app sigue funcionando sin ese detalle.
+  const dayRes = await Promise.all([
+    get('/wellness-service/wellness/dailyHeartRate/?date=' + end).catch(() => null),
+    get('/usersummary-service/usersummary/daily/?calendarDate=' + end).catch(() => null),
+  ]);
+  const hrday = await jsonOf(dayRes[0], null);
+  const summary = await jsonOf(dayRes[1], null);
 
   const kindOf = (x) => x === null || x === undefined ? 'sin-cuerpo'
     : Array.isArray(x) ? 'array(' + x.length + ')'
@@ -815,6 +826,14 @@ async function garminSync(body) {
           k: kindOf(temp.find(x => x && typeof x === 'object') || null) }
       : null,
     tempRows,
+    // Avance del día: FC intradía (cuántas muestras trae la serie) y pasos.
+    hrday: { s: (dayRes[0] && dayRes[0].status) || 0,
+             k: kindOf(hrday),
+             n: (hrday && Array.isArray(hrday.heartRateValues))
+                  ? hrday.heartRateValues.length : 0 },
+    steps: { s: (dayRes[1] && dayRes[1].status) || 0,
+             k: kindOf(summary),
+             n: (summary && typeof summary.totalSteps === 'number') ? 1 : 0 },
     sleepRangeRows,
   };
   if (sleepDay.length) diag.sleepDay = sleepDay;
@@ -827,7 +846,7 @@ async function garminSync(body) {
     start,
     end,
     diag,
-    data: { hrv, rhr, load, sleep, activities, weight, temp },
+    data: { hrv, rhr, load, sleep, activities, weight, temp, hrday, summary },
   });
 }
 

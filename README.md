@@ -1,4 +1,4 @@
-# RecoveryIQ 3.0.0
+# RecoveryIQ 3.1.0
 
 App de recuperación deportiva para iPhone (PWA) conectada a la API de **Intervals.icu**.
 Combina métricas objetivas (HRV, FC en reposo, sueño, carga de entrenamiento y,
@@ -270,12 +270,14 @@ pide el código de 6 dígitos y lo manda con `POST sso.garmin.com/mobile/api/mfa
 | Actividades recientes | `/activitylist-service/activities/search/activities` | ✅ |
 | **Peso y composición corporal** | `/weight-service/weight/dateRange` | ❌ **Solo Garmin** |
 | **Temperatura de la muñeca** | `/sleep-service/sleep/dailySleepData?date={día}` | ❌ **Solo Garmin** |
+| **FC intradía (hoy)** | `/wellness-service/wellness/dailyHeartRate/?date={hoy}` | ❌ **Solo Garmin** |
+| **Pasos de hoy** | `/usersummary-service/usersummary/daily/?calendarDate={hoy}` | ❌ **Solo Garmin** |
 
-**Son hasta 23 peticiones por sincronización** (perfil, HRV por rango, FC reposo por
+**Son hasta 25 peticiones por sincronización** (perfil, HRV por rango, FC reposo por
 rango, carga, actividades, composición corporal, 3 trozos de sueño de 28 días —
-ese endpoint tiene límite de 28 días — y **14 `dailySleepData`**, uno por día).
-El límite del plan Free de Workers son 50 subpeticiones por invocación, así que
-hay margen.
+ese endpoint tiene límite de 28 días — **14 `dailySleepData`**, uno por día, y
+**2 del avance del día**, solo para hoy). El límite del plan Free de Workers son
+50 subpeticiones por invocación, así que hay margen.
 
 **Peso, grasa y masa magra.** El endpoint de composición corporal devuelve
 `{startDate, endDate, dateWeightList[…], totalAverage}` con **peso y masas en
@@ -307,6 +309,30 @@ u `temperatureInCelsius`, saneadas al rango 25–45 °C), así que sirve igual s
 algún día la fuente cambia de formato. Como el dato nocturno de hoy puede no
 haber llegado aún, la portada muestra **el último día con temperatura** y avisa
 de su fecha.
+
+**Avance del día (pasos y FC intradía).** Son **2 peticiones más, solo para
+hoy**: `/wellness-service/wellness/dailyHeartRate/?date=` devuelve la serie de
+pulso del día en `heartRateValues: [[ts, bpm], …]` (más `restingHeartRate` y los
+máximos/mínimos), y `/usersummary-service/usersummary/daily/?calendarDate=` el
+`totalSteps`. `garminHrDay()` normaliza la serie decidiendo sola si los ts son
+instantes reales de medianoche GMT o el convenio *Local de Garmin (se compara el
+primer punto con `startTimestampGmt` y `startTimestampLocal`; a partir de ahí se
+lee todo con `getUTC*`, igual que en el resto de la app) y agupa las muestras en
+**cubetas horarias medias**, que es lo que dibuja la banda de la gráfica.
+El avance se mide con dos piezas:
+
+- **`walkLoadOf(steps, acts)`** — los primeros 4.000 pasos son gestión diaria y
+  no suman; a partir de ahí, **0,002 pts por paso** (500 ≈ 1 punto). Los pasos
+  que ya contabiliza una sesión de pie (caminar/correr, ~100 pasos/min) se
+  descuentan para no contar dos veces lo mismo.
+- **`hrLoadOf(hr, rest, acts)`** — minutos con la FC por encima de **1,7 × tu
+  reposo** *fuera* de las ventanas de sesión (con 20 min de margen): es el
+  cansancio invisible del día (escaleras, cargar cosas, estrés). **0,05 pts por
+  minuto**, tope 10 pts, en cubetas de 5 min anotadas por hora.
+
+`advanceLoad()` los combina en una única carga. **Intervals.icu y el modo demo
+no traen estos endpoints, así que no tendrán avance** (la app lo detecta y no
+inventa nada).
 
 **CTL / ATL / TSB.** Garmin no expone CTL/ATL como tal, así que se calculan en
 `garminToRows()` con **el mismo modelo de Banister que usa Intervals.icu**:
@@ -422,7 +448,7 @@ Seis pestañas en la barra inferior + Ajustes (desde el ⚙️ de arriba):
 | Pestaña | Contenido |
 |---|---|
 | 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas (y **Peso** y **Temp. muñeca** a ancho completo cuando hay dato), conclusiones automáticas. Los cuadros de **Sueño, Peso y Temp. muñeca son clicables** y abren su detalle. Si hoy hay sesión, una conclusión la explica |
-| 📈 **Evolución** | Cómo cae tu energía a lo largo del día: curva desde que te levantas hasta que te acuestas con las sesiones marcadas, lista de las sesiones de hoy con su carga, **desglose del índice** y carga de los últimos 7 días |
+| 📈 **Evolución** | Cómo cae tu energía a lo largo del día: curva desde que te levantas hasta que te acuestas con las sesiones marcadas, **banda de FC intradía del día** en el mismo gráfico (Garmin), lista de las sesiones de hoy con su carga y el **avance del día**, **desglose del índice** y carga de los últimos 7 días |
 | 📅 **Calendario** | Mes completo coloreado por score, detalle por día (wellness + registro subjetivo) |
 | 🏁 **Informe** | Veredicto (🟢🟡🟠🔴), barras HRV/sueño/global, **estado de forma y rendimiento** (índice 0–100, CTL/ATL/TSB, ratio, narrativa), recomendaciones por rango |
 | 🤖 **IA** | Chat con Claude, 5 preguntas rápidas, system prompt con tus datos del día (incluidas las fases del sueño) |
@@ -512,6 +538,20 @@ En el **índice de recuperación** entra como componente «Temperatura» (ver la
 tabla de puntuación): solo se añade al desglose cuando hay dato, así que las
 cuentas de 4 componentes del demo no cambian.
 
+#### El avance del día
+
+Solo Garmin lo trae (§4.5), y aparece en:
+
+- **Evolución** → la columna «Avance del día» con su delta, los pasos y su
+  carga en la caja de sesiones —incluso cuando no hay ninguna sesión— y la
+  **banda de FC intradía** de la gráfica;
+- **Conclusiones de Inicio** → «El día ya pesa» (pasos y minutos de FC alta que
+  restan al índice) o «Día activo sin entrenar» (cuando suman);
+- **Chat IA** → línea «Avance del día: N pasos, M min con FC alta, impacto …»
+  en texto plano;
+- **Ajustes → Diagnóstico Garmin** → filas «FC intradía» (estado HTTP, número
+  de muestras y FC de ahora) y «Pasos» (estado y pasos de hoy).
+
 ### Algoritmo de puntuación
 
 Base neutral de **50**, ajustada por:
@@ -523,7 +563,7 @@ Base neutral de **50**, ajustada por:
 | Sueño 7–9 h / ≥6 h / <6 h | **+10 / +4 / −8** |
 | **Temperatura de la muñeca vs tu base** (solo si hay dato) | **−15 / −10 / −6 / −3** según supere 0,8 / 0,5 / 0,3 / 0,2 °C, **−3 extra** si además la HRV está ≤ −5 % |
 | TSB = CTL − ATL | hasta **±10** (×0,5) |
-| Sesiones del día | **−18 … +3** (ver abajo) |
+| Sesiones del día + **avance del día** (pasos y FC alta, solo Garmin) | **−18 … +3** sobre la carga total, con el impacto **repartido en proporción** entre ambos orígenes (ver abajo) |
 
 Resultado recortado a 0–100 y redondeado. Colores: **≥80 verde** (Excelente),
 **≥65 azul** (Buena), **≥50 amarillo** (Moderada), **<50 rojo** (Baja).
@@ -548,25 +588,44 @@ deporte que sea (caminar incluido). Todo pasa por tres pasos:
    - carga **≥ 15** → **−16 × 0,22** de base, con techo de −18;
    - si la HRV está **≥ 5 % por encima** de tu base → **+3** (aguantas la carga);
    - si está **≤ −8 % por debajo** y la carga es ≥ 35 → **−3** más (señal mala).
+4. **Avance del día** (solo Garmin, §4.5). Además de las sesiones registradas,
+   `advanceLoad()` suma los pasos extra y los tramos de FC alta fuera de sesión.
+   La carga del día es **sesiones + avance** y el impacto único que sale de ahí
+   se **reparte en proporción** a lo que aportó cada origen: el desglose
+   «Actividad de hoy» + «Avance del día» siempre suma el total (con decimales).
+   Si no hay avance —Intervals.icu o demo— el reparto es trivial y las cuentas
+   no cambian.
 
 `scoreParts()` devuelve además el desglose, que es lo que muestra la pestaña
-**Evolución**: cada componente con su aportación y el total.
+**Evolución**: cada componente con su aportación y el total. El índice **al
+despertar** (`morning`) se calcula sin la sesión del día ni el avance ya
+acumulado: es con qué energía te pusiste en pie.
 
 #### Pestaña Evolución: la energía a lo largo del día
 
-`energyAt()` dibuja tres cosas encima de la misma curva:
+`energyAt()` dibuja cuatro cosas encima de la misma curva:
 
 - **Descenso natural** (`baseEnergy`): rápido por la mañana, meseta por la tarde
   y un bajón post-comida sobre las 14:30.
 - **Lo que cuesta cada sesión**: cae al empezar y recupera el 65 % en las horas
   siguientes, dejando el 35 % hasta el final del día. Varias sesiones se acumulan.
+- **El avance del día** (si la fuente lo trae): cada tramo de FC alta deja su
+  huella como una mini-sesión, y los pasos se descuentan de forma **difusa a lo
+  largo de toda la jornada** con el mismo kernel de recuperación —no de golpe—,
+  para que a media tarde notes lo que caminaste a mediodía.
 - **Marcadores**: la sesión aparece con su icono y su hora sobre la curva, y un
   punto marca a qué hora estás leyéndolo.
 
-La cabecera separa los dos números para no confundirlos: **energía ahora**
-(eso que baja durante el día) e **índice de recuperación** (el de Inicio, que sí
-incluye la sesión de hoy). La curva se pinta en SVG con el tramo ya vivido en
-continuo y el resto en discontinua, y el pie de nota dice explícitamente que es
+La cabecera separa los números para no confundirlos: **índice ahora** (el de
+Inicio, ya con la sesión y el avance del día), **energía ahora** (eso que baja
+durante la jornada), **al despertar** (sin sesión ni avance), **por la sesión**
+y **el avance del día** con su delta. La curva se pinta en SVG con el tramo ya
+vivido en continuo y el resto en discontinua.
+
+Dentro del **mismo `<svg>`** (la app dibuja una sola gráfica), debajo de la curva
+de energía va una **banda de FC intradía en rosa** con las cubetas horarias del
+día (solo Garmin), la **línea punteada de tu FC de reposo** como referencia y la
+FC de ahora etiquetada junto a su punto. El pie de nota recuerda que la curva es
 una **estimación, no un dato del dispositivo**.
 
 > **Se asume que te levantas a las 07:00** y que el día acaba a las 23:00: la app
@@ -610,7 +669,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 ## 9. Verificación
 
 Tres suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
-(**458 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+(**578 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
 `tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
@@ -642,7 +701,7 @@ Tres suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
 - **Pestaña Evolución**: SVG de la curva, desglose con sus filas, avisos cuando
   no hay sesiones y nota de que es una estimación.
 
-### `test-garmin.mjs` — 259 aserciones
+### `test-garmin.mjs` — 362 aserciones
 
 - **Normalizador `garminToRows()`**: 60 filas, HRV, FC en reposo, sueño en horas
   con 1 decimal, y las 4 fases reales sumando exactamente el total.
@@ -664,6 +723,19 @@ Tres suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   Informe, 7 estadísticas de forma, el `system prompt` con la temperatura y las
   filas «temp» del diagnóstico en Ajustes. Además se comprueba que `worker.js`
   pide `dailySleepData` para los últimos 14 días y lo devuelve en `data`.
+- **Avance del día** con la forma real de los 2 endpoints de hoy:
+  `garminHrDay()` decidiendo sola entre ts GMT reales y el convenio *Local (con
+  husos ±), 96 muestras cada 15 min, 24 cubetas horarias, media/máx/mín y la FC
+  de ahora; unidades exactas de `walkLoadOf()` (base 4.000 y descuento de
+  caminatas), `hrLoadOf()` (1,7 × reposo, 0,05 pts/min, fuera de sesión) y
+  `advanceLoad()` (null sin datos); reparto proporcional en el índice
+  («Actividad de hoy» −8,6 + «Avance del día» −3,7 sobre 56 de carga), el día
+  sin sesión (todo el impacto es del avance) y con 24.000 pasos (más avance =
+  índice más bajo); `energyAt()` notando pasos y tramos de FC alta sin romper
+  la firma de 5 argumentos del humo; UI con un único `<svg>`, la banda de FC en
+  rosa con halo, «Índice ahora» en la cabecera, insights y prompt con los
+  pasos, y las filas «FC intradía»/«Pasos» del diagnóstico. También se verifica
+  que `worker.js` pide los 2 endpoints y los devuelve en `data`.
 - Redondeo de horas (`sec2h`), `garminFitness()` (EMA 42/7 con semilla en la
   media: carga constante 100 → CTL/ATL 100).
 - `assembleData()` con filas de Garmin: fases **no estimadas**, TSB = CTL − ATL,
@@ -680,7 +752,7 @@ Tres suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
 
-### `test-worker.mjs` — 32 aserciones
+### `test-worker.mjs` — 49 aserciones
 
 La temperatura hay que pedirla día a día (`dailySleepData`) y Garmin la limita o
 la bloquea con facilidad, así que el worker la lanza en una **segunda tanda
@@ -695,8 +767,12 @@ respete:
   pendiente, y van a ratos de 3 como máximo.
 - Una petición del núcleo que falla en red deja su hueco vacío sin tumbar nada;
   si **todo** el núcleo cae se devuelve `NETWORK` (502) y con 401 `REFRESH_FAILED`.
-- Presupuesto: 24 peticiones en total (token + perfil + 8 de núcleo + 14 de
-  temperatura), siempre por debajo del límite de 50 del plan Free.
+- El **avance del día** va en una **tercera tanda** (2 peticiones, solo para
+  hoy): llega con la serie de FC y los pasos intactos, y con **403** la sync
+  sigue respondiendo `ok:true`, `diag.hrday.s = 403` y `data.hrday = null`.
+- Presupuesto: 26 peticiones en total (token + perfil + 8 de núcleo + 14 de
+  temperatura + 2 del avance del día), siempre por debajo del límite de 50 del
+  plan Free, sin peticiones fantasma.
 
 Además, `node --check` sobre el bloque `<script>` del HTML y sobre `worker.js`.
 
@@ -723,9 +799,9 @@ es directo porque toda la lógica está aislada en funciones puras:
 
 **Recomendación:** si llegáis a nativa, la primera tarea es portar
 `calcScore()` + `buildData()` a un target de tests de Swift y verificar que dan
-exactamente los mismos números que la PWA (los 95 tests anteriores sirven de
+exactamente los mismos números que la PWA (los tests anteriores sirven de
 lista de casos).
 
 ---
 
-*RecoveryIQ 3.0.0 · Especificación de octubre de 2026.*
+*RecoveryIQ 3.1.0 · Especificación de octubre de 2026.*

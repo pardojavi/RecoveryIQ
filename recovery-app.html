@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 /* ============================================================
-   RECOVERYIQ 3.0.0 — Sistema de diseño
+   RECOVERYIQ 3.1.0 — Sistema de diseño
    ============================================================ */
 :root{
   --bg:#0a0a0f;
@@ -1435,6 +1435,14 @@ button{border:0; background:none; cursor:pointer; padding:0;}
           <span class="v" id="diag-temp">&#8212;</span>
         </div>
         <div class="set-row">
+          <span class="k">FC intrad&#237;a</span>
+          <span class="v" id="diag-hr">&#8212;</span>
+        </div>
+        <div class="set-row">
+          <span class="k">Pasos</span>
+          <span class="v" id="diag-steps">&#8212;</span>
+        </div>
+        <div class="set-row">
           <span class="k">Actividades</span>
           <span class="v" id="diag-acts">&#8212;</span>
         </div>
@@ -1444,7 +1452,7 @@ button{border:0; background:none; cursor:pointer; padding:0;}
       <div class="settings-card">
         <div class="set-row">
           <span class="k">Versi&#243;n</span>
-          <span class="v">3.0.0</span>
+          <span class="v">3.1.0</span>
         </div>
         <div class="set-row">
           <span class="k">Registros guardados</span>
@@ -1499,7 +1507,7 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 
 <script>
 /* ================================================================
-   RECOVERYIQ 3.0.0 — single-file PWA
+   RECOVERYIQ 3.1.0 — single-file PWA
    ES5 a propósito: var / function / sin flechas ni import.
    El script va al final de <body>: NO se usa DOMContentLoaded.
    ================================================================ */
@@ -1522,7 +1530,7 @@ var MY_AI_PROXY = 'https://recoveryiq-proxy.ecovery.workers.dev/ai';
 // Solo se usa si el worker tiene el secreto ANTHROPIC_API_KEY (API de pago);
 // con Workers AI el worker lo ignora.
 var CLAUDE_MODEL = 'claude-sonnet-4-20250514';
-var APP_VERSION  = '3.0.0';
+var APP_VERSION  = '3.1.0';
 
 /* ---------- 2. ESTADO GLOBAL ---------- */
 var S = {
@@ -1903,9 +1911,11 @@ function actInfo(a){
 }
 
 /* El &#237;ndice se descompone para poder explicarlo: adem&#225;s de HRV, FC,
-   sue&#241;o y TSB entra la actividad de la jornada, cruzada con la HRV. */
-function scoreParts(w, acts){
-  if (!w) return { score:0, load:0, actDelta:0, parts:[] };
+   sue&#241;o y TSB entra la actividad de la jornada, cruzada con la HRV, y el
+   avance del d&#237;a (pasos + FC alta fuera de sesi&#243;n, solo Garmin).
+   `adv`: undefined = se calcula desde la propia fila; null = sin avance. */
+function scoreParts(w, acts, adv){
+  if (!w) return { score:0, load:0, actDelta:0, advDelta:0, parts:[] };
 
   var score = 50, d, parts = [];
 
@@ -1948,8 +1958,12 @@ function scoreParts(w, acts){
     parts.push({ label:'TSB', delta:d });
   }
 
-  // Sesiones del d&#237;a: cuesta frescura, salvo que sea solo un paseo
-  var load = dayLoad(acts), ad = 0;
+  // Carga del d&#237;a: sesiones registradas + avance del d&#237;a (pasos y FC alta
+  // fuera de sesi&#243;n). Un &#250;nico impacto sobre el total, y luego se reparte en
+  // proporci&#243;n a lo que ha aportado cada origen, para que la suma cuadre.
+  if (adv === undefined) adv = (w.steps || w.hrDay) ? advanceLoad(w, acts) : null;
+  var loadA = dayLoad(acts), loadV = (adv && adv.total) ? adv.total : 0;
+  var load = Math.round(loadA + loadV), ad = 0, advD = 0;
   if (load > 0) {
     if (load < 15) {
       ad = 3; // moverse un poco es recuperaci&#243;n activa
@@ -1963,19 +1977,25 @@ function scoreParts(w, acts){
     }
     ad = clamp(ad, -18, 4);
     score += ad;
-    parts.push({ label:'Actividad de hoy', delta:ad });
+    // Reparto del impacto entre lo registrado y el avance, en proporci&#243;n
+    var aPart = Math.round((load ? ad * (loadA / load) : 0) * 10) / 10;
+    advD = Math.round((ad - aPart) * 10) / 10;
+    ad = aPart;
+    if (loadA > 0) parts.push({ label:'Actividad de hoy', delta:aPart });
+    if (loadV > 0) parts.push({ label:'Avance del día', delta:advD });
   }
 
   return {
     score:    Math.max(0, Math.min(100, Math.round(score))),
     load:     load,
     actDelta: ad,
+    advDelta: advD,
     parts:    parts
   };
 }
 
-function calcScore(w, acts){
-  return scoreParts(w, acts).score;
+function calcScore(w, acts, adv){
+  return scoreParts(w, acts, adv).score;
 }
 
 function scoreColor(score){
@@ -2073,7 +2093,9 @@ function assembleData(rows, activities){
     var r = rows[i];
     var ctl = r.ctl || 0, atl = r.atl || 0;
     var acts = byDay[r.id] || null;
-    var sp   = scoreParts(r, acts);
+    // Avance del d&#237;a (pasos + FC alta fuera de sesi&#243;n): solo Garmin lo trae
+    var adv  = (r.steps || r.hrDay) ? advanceLoad(r, acts) : null;
+    var sp   = scoreParts(r, acts, adv);
     dailyMap[r.id] = {
       hrv:       r.hrv,
       restingHR: r.restingHR,
@@ -2083,10 +2105,17 @@ function assembleData(rows, activities){
       atl:       atl,
       tsb:       Math.round((ctl - atl) * 10) / 10,
       score:     sp.score,
-      // Energ&#237;a con la que te levantaste: el mismo &#237;ndice sin la sesi&#243;n del d&#237;a
-      morning:   acts ? calcScore(r, null) : sp.score,
+      // Energ&#237;a con la que te levantaste: el mismo &#237;ndice sin la sesi&#243;n
+      // del d&#237;a ni el avance ya acumulado (null = ninguno de los dos)
+      morning:   calcScore(r, null, null),
       load:      sp.load,
+      // Solo la carga de las sesiones registradas (sin el avance del d&#237;a)
+      sessionLoad: dayLoad(acts || []),
       actDelta:  sp.actDelta,
+      advDelta:  sp.advDelta,
+      advance:   adv,
+      steps:     r.steps || 0,
+      hrDay:     r.hrDay || null,
       parts:     sp.parts,
       acts:      acts,
       body:      r.body || null,
@@ -2167,7 +2196,13 @@ function assembleData(rows, activities){
     recoveryScore:       t.score,
     morningScore:        t.morning,
     activityLoad:        t.load,
+    sessionLoad:         t.sessionLoad,
     activityDelta:       t.actDelta,
+    // Avance del d&#237;a: pasos y FC alta fuera de sesi&#243;n (solo Garmin)
+    advanceDelta:        t.advDelta,
+    advance:             t.advance || null,
+    steps:               t.steps || 0,
+    hrDay:               t.hrDay || null,
     activityParts:       t.parts,
     acts:                t.acts || []
   };
@@ -2379,16 +2414,22 @@ function garminDiag(r, rows, acts){
   var d = r.diag || null;
   var today = ymd(new Date()), i;
   var hrvDays = 0, sleepDays = 0, rhrDays = 0, bodyDays = 0, tempDays = 0;
+  var hrDayDays = 0, stepsDays = 0;
   var tHrv = null, tSleep = null, tRhr = null, tTemp = null;
+  var tSteps = null, tHrNow = null;
   for (i = 0; i < rows.length; i++) {
     if (rows[i].hrv) hrvDays++;
     if (rows[i].sleep !== null) sleepDays++;
     if (rows[i].restingHR) rhrDays++;
     if (rows[i].body && rows[i].body.weight) bodyDays++;
     if (rows[i].tempDev !== null || rows[i].tempC !== null) tempDays++;
+    if (rows[i].hrDay) hrDayDays++;
+    if (rows[i].steps) stepsDays++;
     if (rows[i].id === today) {
       tHrv = rows[i].hrv; tSleep = rows[i].sleep; tRhr = rows[i].restingHR;
       tTemp = tempDevOf(rows[i]);
+      if (rows[i].steps) tSteps = rows[i].steps;
+      if (rows[i].hrDay) tHrNow = rows[i].hrDay.now;
     }
   }
   return {
@@ -2396,14 +2437,20 @@ function garminDiag(r, rows, acts){
     days: rows.length,
     hrvDays: hrvDays, sleepDays: sleepDays, rhrDays: rhrDays, bodyDays: bodyDays,
     tempDays: tempDays,
+    hrDayDays: hrDayDays, stepsDays: stepsDays,
     actsCount: (acts && acts.length) || 0,
     todayHrv: tHrv, todaySleep: tSleep, todayRhr: tRhr, todayTemp: tTemp,
+    todaySteps: tSteps, todayHrNow: tHrNow,
     hrv:  (d && d.hrv)  || null,
     rhr:  (d && d.rhr)  || null,
     load: (d && d.load) || null,
     act:  (d && d.acts) || null,
     weight: (d && d.weight) || null,
     temp: (d && d.temp) || null,
+    // Avance del d&#237;a: dos endpoints m&#225;s, solo para hoy (el n&#250;mero que
+    // trae cada uno explica por qu&#233; puede faltar el dato)
+    hrday: (d && d.hrday) || null,
+    steps: (d && d.steps) || null,
     sleep: sleepDiagCell(d && d.sleep, d && d.sleepDay)
   };
 }
@@ -2725,6 +2772,158 @@ function tempDelta(dev, hrvPct){
   return d;
 }
 
+/* ---------- avance del d&#237;a: pasos + FC intrad&#237;a (solo HOY, solo Garmin) --
+   Dos se&#241;ales que el entrenamiento registrado no captura: lo que caminas
+   (pasos del usersummary) y los tramos de FC alta que ocurren FUERA de
+   cualquier sesi&#243;n (serie de dailyHeartRate). Ambas cansan de verdad y hoy
+   entran en el &#237;ndice y en la curva de Evoluci&#243;n. */
+
+/* FC intrad&#237;a de HOY desde /wellness-service/wellness/dailyHeartRate/. La serie
+   trae `heartRateValues: [[ts|null, bpm|null], &#8230;]` muestreada cada pocos
+   minutos. Los timestamps pueden venir en GMT real o ya desplazados a la hora
+   local (convenio `*Local` de Garmin, que guarda ms cuya lectura UTC ES la
+   hora local): se decide comparando el primer punto con `startTimestampGmt`
+   frente a `startTimestampLocal` y se lee con getUTC*.
+   Devuelve {date, pts:[{h,b}], hourly:[{h,b}], avg, max, min, now, rest}. */
+function garminHrDay(g){
+  var rec = recordsOf(g && g.hrday), i, o = null;
+  for (i = 0; i < rec.length; i++) {
+    if (rec[i] && Object.prototype.toString.call(rec[i].heartRateValues) === '[object Array]') {
+      o = rec[i];
+      break;
+    }
+  }
+  if (!o) return null;
+  var vals = o.heartRateValues, pts = [];
+  var gmt = tsMs(o.startTimestampGmt), loc = tsMs(o.startTimestampLocal);
+  var first = 0, off = 0;
+  for (i = 0; i < vals.length; i++) {
+    var v = vals[i];
+    if (!v || v.length < 2) continue;
+    var ts = tsMs(v[0]), b = numv(v[1]);
+    if (!ts || !b) continue;
+    if (!first) {
+      first = ts;
+      // &#191;La serie arranca sobre la medianoche GMT o sobre la local? Si el
+      // primer punto cuadra con la GMT, los ts son instantes reales y hay que
+      // desplazarlos por el huso; si cuadra con la local, ya vienen desplazados.
+      if (gmt && loc) off = (Math.abs(first - gmt) <= Math.abs(first - loc)) ? (loc - gmt) : 0;
+    }
+    var d = new Date(ts + off);
+    if (isNaN(d.getTime())) continue;
+    pts.push({ h: d.getUTCHours() + d.getUTCMinutes() / 60, b: Math.round(b) });
+  }
+  if (!pts.length) return null;
+
+  // Cubetas horarias (media por hora): lo que se dibuja en la gr&#225;fica y lo
+  // que se mira para detectar tramos de FC alta.
+  var buckets = {}, hourly = [], sum = 0, mx = 0, mn = 0;
+  for (i = 0; i < pts.length; i++) {
+    var p = pts[i];
+    sum += p.b;
+    if (p.b > mx) mx = p.b;
+    if (!mn || p.b < mn) mn = p.b;
+    var hb = Math.floor(p.h);
+    if (!buckets[hb]) buckets[hb] = { s: 0, n: 0 };
+    buckets[hb].s += p.b;
+    buckets[hb].n++;
+  }
+  for (var k in buckets) {
+    if (!buckets.hasOwnProperty(k)) continue;
+    hourly.push({ h: parseInt(k, 10) + 0.5, b: Math.round(buckets[k].s / buckets[k].n) });
+  }
+  hourly.sort(function(a, b){ return a.h - b.h; });
+  return {
+    date:   garminDate(o) || todayKey(),
+    pts:    pts,
+    hourly: hourly,
+    avg:    Math.round(sum / pts.length),
+    max:    mx,
+    min:    mn,
+    now:    pts[pts.length - 1].b,
+    rest:   Math.round(numv(o.restingHeartRate)) || null
+  };
+}
+
+/* Pasos del d&#237;a &#8594; puntos de carga. Lo normal son unos 4.000 pasos de gesti&#243;n
+   diaria (no suman); a partir de ah&#237;, 0,002 pts por paso (500 &#8776; 1 punto). Los
+   pasos que ya contabiliza una sesi&#243;n de pie (caminar/correr, ~100 pasos/min)
+   se descuentan para no contar dos veces lo mismo. */
+var STEPS_BASE = 4000;
+function actSteps(acts){
+  var s = 0, i;
+  if (!acts) return 0;
+  for (i = 0; i < acts.length; i++) {
+    var key = sportKey(acts[i]);
+    if (key === 'caminata' || key === 'correr') s += actMinutes(acts[i]) * 100;
+  }
+  return s;
+}
+function walkLoadOf(steps, acts){
+  var extra = steps - actSteps(acts) - STEPS_BASE;
+  if (extra <= 0) return 0;
+  return Math.round(extra * 0.002 * 10) / 10;   // 500 pasos &#8776; 1 punto
+}
+
+/* &#191;Cae la hora h dentro de alguna sesi&#243;n de hoy? (con 20 min de margen) */
+function inActs(h, acts){
+  if (!acts) return false;
+  for (var i = 0; i < acts.length; i++) {
+    var ah = actHour(acts[i]);
+    if (ah === null) continue;
+    var span = Math.max(0.5, actMinutes(acts[i]) / 60);
+    if (h >= ah - 0.35 && h <= ah + span + 0.35) return true;
+  }
+  return false;
+}
+
+/* Minutos con la FC muy por encima de tu reposo, FUERA de las ventanas de
+   sesi&#243;n: es el "cansancio invisible" del d&#237;a (estr&#233;s, escaleras, cargar
+   cosas&#8230;). 0,05 pts por minuto, tope 10 pts, cubetas de 5 min por hora. */
+function hrLoadOf(hr, rest, acts){
+  if (!hr || !hr.pts || !hr.pts.length) return { mins: 0, load: 0, marks: [] };
+  var thr = (rest || avgHR || 60) * 1.7;
+  var mins = 0, marks = [], i, prev = null;
+  for (i = 0; i < hr.pts.length; i++) {
+    var p = hr.pts[i];
+    if (p.b < thr || inActs(p.h, acts)) { prev = p; continue; }
+    var dt = 5;   // sin referencia previa: cubeta de 5 min
+    if (prev && p.h > prev.h) dt = Math.min(5, (p.h - prev.h) * 60);
+    mins += dt;
+    var hb = Math.floor(p.h), last = marks.length ? marks[marks.length - 1] : null;
+    if (last && last.h === hb + 0.5) last.mins += dt;
+    else marks.push({ h: hb + 0.5, mins: dt });
+    prev = p;
+  }
+  return { mins: Math.round(mins),
+           load: Math.min(10, Math.round(mins * 0.05 * 10) / 10),
+           marks: marks };
+}
+
+/* Avance del d&#237;a de una fila: pasos sin registrar + FC alta fuera de sesi&#243;n.
+   null si la fuente no trae nada de esto (Intervals.icu, demo). */
+function advanceLoad(w, acts){
+  if (!w) return null;
+  var steps = w.steps ? Math.round(w.steps) : 0;
+  var hr = w.hrDay || null;
+  if (!steps && !hr) return null;
+  var walk = steps ? walkLoadOf(steps, acts) : 0;
+  var hrL = hr ? hrLoadOf(hr, w.restingHR || (hr && hr.rest) || null, acts)
+               : { mins: 0, load: 0, marks: [] };
+  return {
+    steps:  steps,
+    walk:   walk,
+    hr:     hrL.load,
+    mins:   hrL.mins,
+    marks:  hrL.marks,
+    total:  Math.round((walk + hrL.load) * 10) / 10,
+    avg:    hr ? hr.avg : null,
+    max:    hr ? hr.max : null,
+    now:    hr ? hr.now : null,
+    hourly: (hr && hr.hourly) ? hr.hourly : []
+  };
+}
+
 /* Carga diaria = suma del activityTrainingLoad de cada actividad.
    Barrido profundo: da igual qu&#233; c&#225;psula use el endpoint de cargas. */
 function garminLoadMap(g){
@@ -2775,7 +2974,8 @@ function garminToRows(g){
     if (!rows[id]) {
       rows[id] = { id:id, hrv:null, restingHR:null, sleep:null, stages:null,
                    ctl:0, atl:0, body:null,
-                   tempDev:null, tempC:null, tempCalib:null };
+                   tempDev:null, tempC:null, tempCalib:null,
+                   steps:null, hrDay:null };
       ids.push(id);
     }
     return rows[id];
@@ -2914,6 +3114,28 @@ function garminToRows(g){
     if (!rb.body || (rb.bodyN || 0) < gotN) { rb.body = got; rb.bodyN = gotN; }
   }
 
+  /* Avance del d&#237;a: pasos (usersummary/daily) y FC intrad&#237;a
+     (dailyHeartRate). El worker los pide SOLO para hoy, as&#237; que se cuelgan
+     de la fila de hoy (o de la fecha que traiga la propia respuesta). */
+  var today0 = todayKey();
+  var hrD = garminHrDay(g);
+  var stp = null, stpId = '', ssum = recordsOf(g.summary);
+  for (i = 0; i < ssum.length; i++) {
+    var sv = numv(ssum[i].totalSteps !== undefined ? ssum[i].totalSteps : ssum[i].steps);
+    if (!sv) continue;
+    stp = Math.round(sv);
+    stpId = garminDate(ssum[i]) || today0;
+    break;
+  }
+  var avId = (hrD && hrD.date) || stpId;
+  if (avId) {
+    var ra = row(avId);
+    if (ra) {
+      if (hrD)          ra.hrDay = hrD;
+      if (stp !== null) ra.steps = stp;
+    }
+  }
+
   /* Carga → CTL/ATL */
   var lm = garminLoadMap(g);
   if (lm.has && ids.length) {
@@ -2930,7 +3152,7 @@ function garminToRows(g){
   for (i = 0; i < ids.length; i++) {
     var r = rows[ids[i]];
     if (r.hrv || r.restingHR || r.sleep !== null || r.body ||
-        r.tempDev !== null || r.tempC !== null) out.push(r);
+        r.tempDev !== null || r.tempC !== null || r.steps || r.hrDay) out.push(r);
   }
   return out;
 }
@@ -3728,19 +3950,37 @@ function buildInsights(){
   }
 
   /* Sesiones de hoy entran en el c&#225;lculo: se explican en conclusiones */
-  if (t.acts && t.acts.length && t.activityLoad > 0) {
+  if (t.acts && t.acts.length && (t.sessionLoad || 0) > 0) {
     var nAct = t.acts.length;
     var adR  = Math.round(t.activityDelta * 10) / 10;
     if (t.activityDelta < 0) {
       out.push({ type:'warn', icon:'&#127939;', title:'Hoy ya has entrenado',
         body: nAct + (nAct === 1 ? ' sesi&#243;n' : ' sesiones') +
-              ' con una carga de ' + t.activityLoad + ' puntos. Resta ' + Math.abs(adR) +
+              ' con una carga de ' + t.sessionLoad + ' puntos. Resta ' + Math.abs(adR) +
               ' a tu &#237;ndice: tenlo en cuenta antes de encadenar otra.' });
     } else if (t.activityDelta > 0) {
       out.push({ type:'good', icon:'&#128694;', title:'D&#237;a activo',
         body: nAct + (nAct === 1 ? ' sesi&#243;n ligera' : ' sesiones ligeras') +
-              ' (carga ' + t.activityLoad + '). Moverse ayuda a recuperar: +' + adR +
+              ' (carga ' + t.sessionLoad + '). Moverse ayuda a recuperar: +' + adR +
               ' a tu &#237;ndice.' });
+    }
+  }
+
+  /* Avance del d&#237;a: pasos y FC alta fuera de sesi&#243;n (solo Garmin). El
+     entrenamiento registrado no lo captura, pero cansa igual. */
+  if (t.advance && t.advance.total > 0) {
+    var avTxt = [];
+    if (t.advance.steps) avTxt.push(t.advance.steps + ' pasos');
+    if (t.advance.mins)  avTxt.push(Math.round(t.advance.mins) + ' min con FC alta');
+    var avR = Math.round((t.advanceDelta || 0) * 10) / 10;
+    if (avR < 0) {
+      out.push({ type:'warn', icon:'&#128694;', title:'El d&#237;a ya pesa',
+        body: (avTxt.join(' y ') || 'Carga intrad&#237;a') + ' sin contar tus sesiones. Resta ' +
+              Math.abs(avR) + ' a tu &#237;ndice: vigila no encadenar m&#225;s carga hoy.' });
+    } else if (avR > 0) {
+      out.push({ type:'good', icon:'&#128694;', title:'D&#237;a activo sin entrenar',
+        body: (avTxt.join(' y ') || 'Carga intrad&#237;a') + '. Moverse ayuda a recuperar: +' +
+              avR + ' a tu &#237;ndice.' });
     }
   }
 
@@ -3773,9 +4013,20 @@ function baseEnergy(h, wake, bed, morning){
   return e;
 }
 
-/* Lo que cuesta cada sesi&#243;n: cae r&#225;pido al empezar y se recupera el 65 %
-   en las horas siguientes (el 35 % se queda hasta el final del d&#237;a). */
-function energyAt(h, wake, bed, morning, acts){
+/* Kernel de recuperaci&#243;n compartido: c&#243;mo de fuerte llega a la hora h un
+   gasto pasado —de sesi&#243;n, de FC alta o de pasos—. Sube hasta el m&#225;ximo
+   en los primeros 12 min y luego recupera el 65 % en las horas siguientes
+   (el 35 % se queda hasta el final del d&#237;a). */
+function recKernel(dt){
+  if (dt <= 0) return 0;
+  return dt < 0.2 ? (dt / 0.2) : (0.35 + 0.65 * Math.exp(-(dt - 0.2) / 2.5));
+}
+
+/* Lo que cuesta cada sesi&#243;n; con `adv` (opcional) a&#241;ade el avance del
+   d&#237;a: cada tramo de FC alta fuera de sesi&#243;n pesa como una mini-sesi&#243;n,
+   y los pasos se descuentan de forma difusa (hora a hora desde la salida),
+   todo con el mismo kernel de recuperaci&#243;n. */
+function energyAt(h, wake, bed, morning, acts, adv){
   var e = baseEnergy(h, wake, bed, morning), i;
   if (acts) {
     for (i = 0; i < acts.length; i++) {
@@ -3784,21 +4035,48 @@ function energyAt(h, wake, bed, morning, acts){
       var L = actLoad(acts[i]);
       if (L <= 0) continue;
       var imp = (L < 15) ? 2 : Math.min(18, L * 0.18);
-      var dt = h - ah;
-      var w = dt < 0.2 ? (dt / 0.2) : (0.35 + 0.65 * Math.exp(-(dt - 0.2) / 2.5));
-      e -= imp * w;
+      e -= imp * recKernel(h - ah);
+    }
+  }
+  if (adv) {
+    // Tramos de FC alta: cada uno deja su huella como una mini-sesi&#243;n
+    if (adv.marks) {
+      for (i = 0; i < adv.marks.length; i++) {
+        var mh = adv.marks[i].h;
+        if (h < mh) continue;
+        var mL = adv.marks[i].mins * 0.05;   // 0,05 pts por minuto
+        if (mL <= 0) continue;
+        var mImp = (mL < 15) ? 2 : Math.min(18, mL * 0.18);
+        e -= mImp * recKernel(h - mh);
+      }
+    }
+    // Pasos: gasto difuso — se gastan a un ritmo constante desde la salida y
+    // cada hora ya vivida se recupera con el mismo kernel: lo caminado por la
+    // ma&#241;ana pesa menos por la tarde que lo de hace un rato
+    if (adv.walk > 0 && h > wake) {
+      var rate = adv.walk / Math.max(1, bed - wake);   // pts por hora
+      var g = Math.floor(wake) + 1, spent = 0, tA, tB;
+      while (g - 1 < h) {
+        tA = Math.max(wake, g - 1);
+        tB = Math.min(h, g);
+        if (tB > tA) spent += rate * (tB - tA) * recKernel(h - tB);
+        g++;
+      }
+      e -= spent;
     }
   }
   return clamp(round1(e), 0, 100);
 }
 
-function evoChart(nowH, wake, bed, morning, acts){
-  var W = 340, H = 176, pl = 26, pr = 8, pt = 20, pb = 24;
+function evoChart(nowH, wake, bed, morning, acts, adv){
+  var W = 340, H = 240, pl = 26, pr = 8, pt = 20;
+  var yBot = 148;                    // suelo de la curva de energ&#237;a
+  var yHrTop = 166, yHrBot = 210;    // banda de FC intrad&#237;a (mismo SVG)
   var span = Math.max(1, bed - wake);
   var nh = clamp(nowH, wake, bed);
 
   function X(h){ return pl + (h - wake) / span * (W - pl - pr); }
-  function Y(e){ return pt + (1 - e / 100) * (H - pt - pb); }
+  function Y(e){ return pt + (1 - e / 100) * (yBot - pt); }
   function lineOf(arr){
     var s = '', j;
     for (j = 0; j < arr.length; j++) {
@@ -3811,7 +4089,7 @@ function evoChart(nowH, wake, bed, morning, acts){
   for (i = 0; i <= N; i++) {
     h = wake + i * 0.25;
     if (h > bed) h = bed;
-    var e = energyAt(h, wake, bed, morning, acts);
+    var e = energyAt(h, wake, bed, morning, acts, adv);
     if (h <= nh) past.push([h, e]);
     future.push([h, e]);
   }
@@ -3848,9 +4126,9 @@ function evoChart(nowH, wake, bed, morning, acts){
       var ah = actHour(acts[i]);
       if (ah === null || ah < wake || ah > bed) continue;
       info = actInfo(acts[i]);
-      var mx = X(ah), my = Y(energyAt(ah, wake, bed, morning, acts));
+      var mx = X(ah), my = Y(energyAt(ah, wake, bed, morning, acts, adv));
       marks += '<line x1="' + mx.toFixed(1) + '" y1="' + pt + '" x2="' + mx.toFixed(1) +
-               '" y2="' + (H - pb) + '" stroke="rgba(167,139,250,.3)" stroke-width="1" ' +
+               '" y2="' + yBot + '" stroke="rgba(167,139,250,.3)" stroke-width="1" ' +
                'stroke-dasharray="2 3"></line>' +
                '<circle cx="' + mx.toFixed(1) + '" cy="' + my.toFixed(1) + '" r="4" ' +
                'fill="#a78bfa" stroke="#0a0a0f" stroke-width="1.5"></circle>' +
@@ -3862,24 +4140,85 @@ function evoChart(nowH, wake, bed, morning, acts){
   /* tramos */
   var area = '', solid = '', dash = '';
   if (past.length > 1) {
-    area = 'M' + X(past[0][0]).toFixed(1) + ' ' + (H - pb) + ' L' + lineOf(past).slice(1) +
-           'L' + X(past[past.length - 1][0]).toFixed(1) + ' ' + (H - pb) + ' Z';
+    area = 'M' + X(past[0][0]).toFixed(1) + ' ' + yBot + ' L' + lineOf(past).slice(1) +
+           'L' + X(past[past.length - 1][0]).toFixed(1) + ' ' + yBot + ' Z';
     solid = lineOf(past);
   }
   if (future.length > 1) dash = lineOf(future);
 
-  /* punto de ahora */
-  var nowDot = '';
+  /* punto de ahora + etiqueta num&#233;rica con halo (paint-order) */
+  var nowDot = '', nowLabel = '';
   if (nowH >= wake && nowH <= bed) {
-    var nx = X(nh), ny = Y(energyAt(nh, wake, bed, morning, acts));
+    var nx = X(nh), ny = Y(energyAt(nh, wake, bed, morning, acts, adv));
     nowDot = '<line x1="' + nx.toFixed(1) + '" y1="' + pt + '" x2="' + nx.toFixed(1) +
-             '" y2="' + (H - pb) + '" stroke="rgba(255,255,255,.4)" stroke-width="1"></line>' +
+             '" y2="' + yBot + '" stroke="rgba(255,255,255,.4)" stroke-width="1"></line>' +
              '<circle cx="' + nx.toFixed(1) + '" cy="' + ny.toFixed(1) + '" r="5.5" fill="' +
-             scoreColorHex(energyAt(nh, wake, bed, morning, acts)) + '" stroke="#0a0a0f" stroke-width="2"></circle>';
+             scoreColorHex(energyAt(nh, wake, bed, morning, acts, adv)) +
+             '" stroke="#0a0a0f" stroke-width="2"></circle>';
+    // El dato, bien visible junto al punto (halo oscuro para que respire
+    // sobre la curva)
+    nowLabel = '<text x="' + (nx - 8).toFixed(1) + '" y="' + (ny - 8).toFixed(1) +
+               '" font-size="11" font-weight="700" text-anchor="end" ' +
+               'fill="' + scoreColorHex(energyAt(nh, wake, bed, morning, acts, adv)) +
+               '" stroke="#0a0a0f" stroke-width="3" paint-order="stroke" ' +
+               'stroke-linejoin="round">' +
+               energyAt(nh, wake, bed, morning, acts, adv) + '</text>';
+  }
+
+  /* Banda de FC intrad&#237;a (Garmin): la serie horaria de hoy dentro del MISMO
+     SVG (el humo exige un solo <svg> en #evo-hero), en rosa, con la l&#237;nea
+     punteada de tu FC de reposo como referencia. */
+  var band = '';
+  if (adv && adv.hourly && adv.hourly.length) {
+    var lo = 1e9, hi = 0, j;
+    for (j = 0; j < adv.hourly.length; j++) {
+      if (adv.hourly[j].h < wake || adv.hourly[j].h > bed) continue;
+      if (adv.hourly[j].b < lo) lo = adv.hourly[j].b;
+      if (adv.hourly[j].b > hi) hi = adv.hourly[j].b;
+    }
+    var restHr = adv.rest || 0;
+    if (restHr) { lo = Math.min(lo, restHr); hi = Math.max(hi, restHr); }
+    if (lo > hi) { lo = 50; hi = 90; }             // sin dato: escala por defecto
+    lo = Math.max(0, lo - 6); hi = hi + 6;
+    if (hi - lo < 30) hi = lo + 30;                // escala mínima legible
+
+    function YHr(b){ return yHrBot - (b - lo) / (hi - lo) * (yHrBot - yHrTop); }
+
+    var pts = [], d2 = '';
+    for (j = 0; j < adv.hourly.length; j++) {
+      if (adv.hourly[j].h < wake || adv.hourly[j].h > bed) continue;
+      pts.push(adv.hourly[j]);
+    }
+    if (pts.length) {
+      for (j = 0; j < pts.length; j++) {
+        d2 += (j ? 'L' : 'M') + X(pts[j].h).toFixed(1) + ' ' + YHr(pts[j].b).toFixed(1) + ' ';
+      }
+      band += '<rect x="' + pl + '" y="' + yHrTop + '" width="' + (W - pl - pr) +
+              '" height="' + (yHrBot - yHrTop) + '" rx="4" fill="rgba(244,114,182,.05)"></rect>' +
+              '<text x="3" y="' + (yHrTop + 8) + '" font-size="8.5" ' +
+              'fill="rgba(244,114,182,.55)">FC</text>';
+      if (restHr) {
+        band += '<line x1="' + pl + '" y1="' + YHr(restHr).toFixed(1) + '" x2="' + (W - pr) +
+                '" y2="' + YHr(restHr).toFixed(1) + '" stroke="rgba(244,114,182,.35)" ' +
+                'stroke-width="1" stroke-dasharray="3 3"></line>';
+      }
+      band += '<path d="' + d2 + '" fill="none" stroke="#f472b6" stroke-width="1.8" ' +
+              'stroke-linejoin="round" stroke-linecap="round" opacity=".9"></path>';
+      // La FC de ahora, con su etiqueta al lado (mismo halo que la energ&#237;a)
+      if (adv.now && nowH >= wake && nowH <= bed) {
+        var fx = X(nh), fy = YHr(adv.now);
+        band += '<circle cx="' + fx.toFixed(1) + '" cy="' + fy.toFixed(1) + '" r="4" ' +
+                'fill="#f472b6" stroke="#0a0a0f" stroke-width="1.5"></circle>' +
+                '<text x="' + (fx - 7).toFixed(1) + '" y="' + (fy + 11).toFixed(1) +
+                '" font-size="10" font-weight="700" text-anchor="end" fill="#f9a8d4" ' +
+                'stroke="#0a0a0f" stroke-width="3" paint-order="stroke" ' +
+                'stroke-linejoin="round">' + adv.now + '</text>';
+      }
+    }
   }
 
   return '<svg class="evo-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
-           'aria-label="Evoluci&#243;n de la energ&#237;a a lo largo del d&#237;a">' +
+           'aria-label="Evoluci&#243;n de la energ&#237;a y la FC a lo largo del d&#237;a">' +
            '<defs><linearGradient id="evoFill" x1="0" y1="0" x2="0" y2="1">' +
              '<stop offset="0%" stop-color="#6c63ff" stop-opacity=".34"></stop>' +
              '<stop offset="100%" stop-color="#6c63ff" stop-opacity="0"></stop>' +
@@ -3890,7 +4229,7 @@ function evoChart(nowH, wake, bed, morning, acts){
                    'stroke-dasharray="4 4" stroke-linecap="round" opacity=".55"></path>' : '') +
            (solid ? '<path d="' + solid + '" fill="none" stroke="#a78bfa" stroke-width="2.4" ' +
                     'stroke-linejoin="round" stroke-linecap="round"></path>' : '') +
-           marks + nowDot + xlab +
+           marks + nowDot + nowLabel + band + xlab +
          '</svg>';
 }
 
@@ -3903,7 +4242,10 @@ function renderEvo(){
   var wake = EVO_WAKE, bed = EVO_BED;
   var morning = (t.morningScore === null || t.morningScore === undefined)
                   ? t.recoveryScore : t.morningScore;
-  var atNow = energyAt(clamp(nowH, wake, bed), wake, bed, morning, t.acts);
+  var atNow = energyAt(clamp(nowH, wake, bed), wake, bed, morning, t.acts, t.advance);
+  // Avance del d&#237;a: delta y carga (0 si la fuente no lo trae)
+  var advD = (t.advanceDelta === null || t.advanceDelta === undefined) ? 0 : t.advanceDelta;
+  var advL = (t.advance && t.advance.total) ? t.advance.total : 0;
 
   /* --- cabecera + curva --- */
   var hero = $('evo-hero');
@@ -3911,21 +4253,26 @@ function renderEvo(){
     hero.innerHTML =
       '<div class="evo-head">' +
         '<div>' +
-          '<div class="evo-big" style="color:' + scoreColorHex(atNow) + '">' + atNow + '</div>' +
-          '<div class="evo-cap">Energ&#237;a ahora</div>' +
+          '<div class="evo-big" style="color:' + scoreColorHex(t.recoveryScore) + '">' +
+            t.recoveryScore + '</div>' +
+          '<div class="evo-cap">&#205;ndice ahora</div>' +
         '</div>' +
         '<div class="evo-when">' +
-          '<div>&#205;ndice de recuperaci&#243;n <b>' + t.recoveryScore + '</b></div>' +
+          '<div>Energ&#237;a ahora <b>' + atNow + '</b></div>' +
           '<div>Al despertar <b>' + morning + '</b></div>' +
           '<div>Por la sesi&#243;n <b class="evo-delta ' +
             (t.activityDelta > 0 ? 'up' : (t.activityDelta < 0 ? 'down' : 'flat')) + '">' +
             (t.activityDelta > 0 ? '+' : '') + round1(t.activityDelta) + '</b></div>' +
+          '<div>Avance del d&#237;a <b class="evo-delta ' +
+            (advD > 0 ? 'up' : (advD < 0 ? 'down' : 'flat')) + '">' +
+            (advD > 0 ? '+' : '') + round1(advD) + '</b></div>' +
         '</div>' +
       '</div>' +
-      evoChart(nowH, wake, bed, morning, t.acts) +
+      evoChart(nowH, wake, bed, morning, t.acts, t.advance) +
       '<div class="evo-legend">' +
         '<span><i style="background:#a78bfa"></i>Energ&#237;a</span>' +
         '<span><i style="background:#a78bfa; opacity:.55"></i>Proyecci&#243;n</span>' +
+        '<span><i style="background:#f472b6"></i>FC intrad&#237;a</span>' +
         '<span><i style="background:#0a0a0f; border:1px solid rgba(255,255,255,.4)"></i>Ahora</span>' +
       '</div>';
   }
@@ -3945,10 +4292,27 @@ function renderEvo(){
     }
     ah += '<div class="scores-list">' +
             '<div class="score-row"><span>Carga total de hoy</span><b>' + t.activityLoad + '</b></div>' +
+            (advL ? '<div class="score-row"><span>Del avance del d&#237;a</span><b>' +
+                    advL + '</b></div>' : '') +
             '<div class="score-row"><span>Impacto en tu &#237;ndice</span>' +
               '<b class="' + (t.activityDelta < 0 ? 'neg' : 'pos') + '">' +
               (t.activityDelta > 0 ? '+' : '') + round1(t.activityDelta) + ' pts</b></div>' +
+            (advD !== 0 ? '<div class="score-row"><span>Del avance del d&#237;a</span>' +
+              '<b class="' + (advD < 0 ? 'neg' : 'pos') + '">' +
+              (advD > 0 ? '+' : '') + round1(advD) + ' pts</b></div>' : '') +
           '</div>';
+  } else if (t.advance) {
+    // Sin sesiones, pero el d&#237;a ya ha dejado huella: pasos y FC alta
+    ah = '<div class="scores-list">' +
+          (t.advance.steps ? '<div class="score-row"><span>Pasos de hoy</span><b>' +
+                             t.advance.steps + '</b></div>' : '') +
+          '<div class="score-row"><span>Carga del avance</span><b>' + advL + '</b></div>' +
+          '<div class="score-row"><span>Impacto en tu &#237;ndice</span>' +
+            '<b class="' + (advD < 0 ? 'neg' : 'pos') + '">' +
+            (advD > 0 ? '+' : '') + round1(advD) + ' pts</b></div>' +
+        '</div>' +
+        '<div class="empty-note">Sin sesiones registradas hoy, pero tu d&#237;a ya cuenta: ' +
+        'caminar y los tramos de FC alta entran en el c&#225;lculo.</div>';
   } else {
     ah = '<div class="empty-note">Sin sesiones registradas hoy.<br>' +
          'Todo lo que registre tu fuente &#8212; caminar incluido &#8212; aparecer&#225; aqu&#237; ' +
@@ -4004,7 +4368,8 @@ function renderEvo(){
   if ($('evo-note')) {
     $('evo-note').innerHTML =
       'Curva estimada: parte de tu &#237;ndice al despertar (sue&#241;o, HRV, FC y TSB), ' +
-      'le resta el desgaste natural de la jornada y lo que cuesta cada sesi&#243;n. ' +
+      'le resta el desgaste natural de la jornada, lo que cuesta cada sesi&#243;n y ' +
+      '—si tu fuente lo trae— los pasos y los tramos de FC alta del d&#237;a. ' +
       'RecoveryIQ no mide la energ&#237;a en vivo &#8212; &#250;salo como gu&#237;a. ' +
       'Se asume que te levantas a las ' + EVO_WAKE + ':00 y que el d&#237;a acaba a las ' +
       EVO_BED + ':00.';
@@ -4503,6 +4868,18 @@ function renderSettings(){
         (dg.todayTemp !== null && dg.todayTemp !== undefined
            ? ' &#183; hoy <b>' + (dg.todayTemp > 0 ? '+' : '') + esc(dg.todayTemp) + '</b> &#176;C'
            : ' &#183; hoy sin dato');
+      // Avance del d&#237;a: dos endpoints m&#225;s, SOLO para hoy (el n&#250;mero de
+      // muestras/pasos explica por qu&#233; puede faltar el dato)
+      if ($('diag-hr')) $('diag-hr').innerHTML =
+        diagCell(dg.hrday) +
+        (dg.hrday && dg.hrday.n ? ' &#183; <b>' + dg.hrday.n + '</b> muestras'
+                                : ' &#183; sin serie') +
+        (dg.todayHrNow ? ' &#183; ahora <b>' + dg.todayHrNow + '</b> bpm' : '');
+      if ($('diag-steps')) $('diag-steps').innerHTML =
+        diagCell(dg.steps) +
+        (dg.steps && dg.steps.n ? ' &#183; <b>1</b> d' : ' &#183; sin dato') +
+        (dg.todaySteps ? ' &#183; hoy <b>' + dg.todaySteps + '</b> pasos'
+                       : ' &#183; hoy sin dato');
       if ($('diag-acts')) $('diag-acts').innerHTML =
         (dg.actsCount || 0) + ' &#183; ' + diagCell(dg.act);
     }
@@ -4572,6 +4949,16 @@ function buildSystemPrompt(){
           (t.bodyFat ? ' (grasa ' + t.bodyFat + '%)' : '') +
           (t.body && t.body.muscle ? ', masa magra ' + t.body.muscle + ' kg' : '') +
           (t.weightBaseline ? ', media ' + t.weightBaseline + ' kg' : '') + '.'
+        : '') +
+      (t.advance
+        ? ' Avance del día (solo Garmin, sin contar las sesiones): ' +
+          (t.advance.steps ? t.advance.steps + ' pasos' : 'sin pasos') +
+          (t.advance.mins
+            ? ', ' + Math.round(t.advance.mins) + ' min con FC alta fuera de sesión' +
+              (t.advance.max ? ' (máx. ' + t.advance.max + ' bpm, ahora ' + t.advance.now + ')' : '')
+            : '') +
+          '. Impacto en el índice: ' + ((t.advanceDelta || 0) > 0 ? '+' : '') +
+          round1(t.advanceDelta || 0) + ' puntos.'
         : '')
     : 'Sin datos disponibles.';
 
