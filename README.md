@@ -449,7 +449,7 @@ Seis pestañas en la barra inferior + Ajustes (desde el ⚙️ de arriba):
 |---|---|
 | 🏠 **Inicio** | Círculo de índice (conic-gradient), pills de tendencia, gráfico de 7 días, 4 métricas (y **Peso** y **Temp. muñeca** a ancho completo cuando hay dato), conclusiones automáticas. Los cuadros de **Sueño, Peso y Temp. muñeca son clicables** y abren su detalle. Si hoy hay sesión, una conclusión la explica |
 | 📈 **Evolución** | Cómo cae tu energía a lo largo del día: curva desde que te levantas hasta que te acuestas con las sesiones marcadas, **banda de FC intradía del día** en el mismo gráfico (Garmin), lista de las sesiones de hoy con su carga y el **avance del día**, **desglose del índice** y carga de los últimos 7 días |
-| 📅 **Calendario** | Mes completo coloreado por score, detalle por día (wellness + registro subjetivo) y **desplegable de actividades** con todas sus métricas (vatios, NP, W/kg, FC, cadencia, distancia…) y un **informe de rendimiento con IA** al que puedes seguir preguntando |
+| 📅 **Calendario** | Mes completo de **lunes a domingo** coloreado por score, detalle por día (wellness + registro subjetivo) y **desplegable de actividades** con todas sus métricas (vatios, NP, picos 1 m/5 m/8 m/10 m/20 m/1 h, W/kg, FC, cadencia, distancia…) y un **informe de rendimiento con IA** al que puedes seguir preguntando |
 | 🏁 **Informe** | Veredicto (🟢🟡🟠🔴), barras HRV/sueño/global, **estado de forma y rendimiento** (índice 0–100, CTL/ATL/TSB, ratio, narrativa), recomendaciones por rango |
 | 🤖 **IA** | Chat con Claude, 5 preguntas rápidas, system prompt con tus datos del día (incluidas las fases del sueño). Los informes de actividad usan el mismo proxy y se muestran en el calendario |
 | 📝 **Registrar** | Cansancio, ánimo, estrés, calidad de sueño, molestias, salud, notas |
@@ -467,21 +467,35 @@ conectar con la otra. Ajustes muestra siempre cuál está activa.
 Al pulsar un día con datos aparece, junto al resto de métricas, un
 **desplegable «Actividades de este día»**. Cada sesión puede desplegarse a su vez
 y muestra todo lo que la fuente trae: potencia media / normalizada / máxima,
-vatios por kilo (si hay peso), FC media y máxima, cadencia, velocidad,
-distancia, desnivel, calorías y carga (TSS). Intervals.icu y Garmin usan nombres
-distintos para estos campos y la app los normaliza; las duraciones de Garmin,
-que vienen en milisegundos, se convierten a segundos.
+**picos de 1 min, 5 min, 8 min, 10 min, 20 min y 1 hora**, vatios por kilo
+(si hay peso), FC media y máxima, cadencia, velocidad, distancia, desnivel,
+calorías y carga (TSS). Intervals.icu y Garmin usan nombres distintos para
+estos campos y la app los normaliza; las duraciones de Garmin, que vienen en
+milisegundos, se convierten a segundos.
+
+En Intervals.icu los picos no vienen en el listado de sesiones: la app pide
+`/api/v1/activity/{id}/power-curve` para las sesiones de ciclismo con potencia
+y lee ahí los mejores esfuerzos medios (con interpolación si falta el punto
+exacto). Si la sesión fue más corta que la duración pedida, simplemente no se
+muestra ese pico. Es una petición opcional: si falla, el resto de los datos
+sigue cargando igual.
+
+El calendario va de **lunes a domingo**; el detalle de cada día se sigue
+abriendo igual al tocar una casilla con datos.
 
 El botón **🤖 Informe de rendimiento** genera un análisis con la IA (la ruta
 `/ai` del worker, la misma que usa el chat). El prompt cruza la sesión con:
 
 - la **media de potencia de tus propias sesiones de ciclismo** (para decir
   explícitamente si los vatios han sido buenos, normales o malos),
+- los **picos de 1 min a 1 hora**, para distinguir un esfuerzo sostenido de un
+  pico puntual,
 - el **peso** y los **W/kg**,
-- la **FC media/máxima** frente a la **FC nocturna o de reposo** y el TSS,
+- la **FC media/máxima** frente a la **FC nocturna o de reposo**, la **FC
+  mínima** y el TSS,
 - la **HRV de ese día frente a tu base**, las **horas de sueño y sus fases**,
   el peso y la **temperatura de la muñeca** si están disponibles,
-- el CTL/ATL/TSB y el índice de recuperación de ese día.
+- el CTL/ATL/TSB, el índice y el **estado de recuperación** de ese día.
 
 El resultado se guarda durante la sesión: sigue visible al cambiar de mes o de
 pestaña. Debajo del informe hay preguntas rápidas («¿Dónde puedo mejorar?»,
@@ -697,7 +711,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 ## 9. Verificación
 
 Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
-(**634 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+(**663 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
 `tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
@@ -707,8 +721,8 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   +10,3 %, FC 52/55, −5,5 %, sueño 7,5 h, +1 h, CTL 68, ATL 72, TSB −4, 28 días).
 - Render del dashboard (círculo, 4 tarjetas, semana, conclusiones).
 - Navegación por las 6 pestañas + Ajustes (un solo tab activo a la vez).
-- Calendario: recuento exacto de días con datos del mes, navegación entre meses
-  y detalle de día (con `scrollIntoView` protegido).
+- Calendario: semana de lunes a domingo, recuento exacto de días con datos del
+  mes, navegación entre meses y detalle de día (con `scrollIntoView` protegido).
 - Informe: veredicto 78 → 🟡 PUEDE ENTRENAR y la sección **Estado de forma y
   rendimiento** (índice 86, «En gran forma», CTL 68, ATL 72, TSB −4, ratio
   `0.94` con 2 decimales, 6 estadísticas y recomendaciones).
@@ -780,17 +794,25 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
 
-### `test-calendar-ai.mjs` — 56 aserciones
+### `test-calendar-ai.mjs` — 85 aserciones
 
+- Semana del calendario de lunes a domingo (rótulos y casillas vacías iniciales).
 - Desplegable del día con 2 sesiones: nombre personalizado, potencia media,
-  normalizada y por kilo, FC, cadencia, distancia, desnivel y carga.
+  normalizada, los seis picos (1 m, 5 m, 8 m, 10 m, 20 m y 1 h) y por kilo,
+  FC, cadencia, distancia, desnivel y carga.
 - Payload del informe: POST a `/ai`, 900 tokens, prompt en texto plano con
-  vatios, media habitual de ciclismo, HRV, FC nocturna, sueño, peso y W/kg.
+  vatios, picos, media habitual de ciclismo, HRV, FC nocturna, FC mínima,
+  estado de recuperación, sueño, peso y W/kg.
 - Informe pintado, caché en `S.activityReports`, preguntas rápidas, campo libre
   y tecla Enter: segunda llamada con 600 tokens, prompt en modo pregunta y el
   informe anterior como contexto. El hilo sobrevive a repintar el calendario.
-- Normalización de las métricas de rendimiento de Garmin al mismo formato que
-  Intervals.icu.
+- Curvas de potencia: extracción/interpolación de los seis picos, petición
+  opcional a `/activity/{id}/power-curve` solo para ciclismo con vatios y
+  normalización de los campos de Garmin.
+- Normalización de la FC mínima (Intervals.icu y Garmin) y de la potencia
+  normalizada (`norm_power`, `icu_weighted_avg_watts`).
+- Las cuatro suites leen el HTML desde la carpeta del proyecto mediante
+  `fileURLToPath`, sin rutas absolutas cableadas.
 
 ### `test-worker.mjs` — 49 aserciones
 

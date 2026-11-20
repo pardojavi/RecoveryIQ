@@ -1,8 +1,9 @@
 /* RecoveryIQ — suite de humo: demo, dashboard, calendario, informe, IA, registro */
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { JSDOM } from 'jsdom';
 
-const APP = '/Users/javier.pardo/RecoveryIQ/recovery-app.html';
+const APP = fileURLToPath(new URL('../recovery-app.html', import.meta.url));
 const html = fs.readFileSync(APP, 'utf8');
 
 let pass = 0, fail = 0;

@@ -8,7 +8,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { pathToFileURL } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 let pass = 0, fail = 0;
 const ok = (c, l, x) => {
@@ -49,7 +49,7 @@ globalThis.Response = ShimResponse;
 globalThis.Request = ShimRequest;
 
 /* ---------- carga el worker desde disco ---------- */
-const ROOT = '/Users/javier.pardo/RecoveryIQ';
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const tmp = path.join(os.tmpdir(), 'riq-worker-' + process.pid + '.mjs');
 fs.copyFileSync(path.join(ROOT, 'worker.js'), tmp);
 const worker = (await import(pathToFileURL(tmp).href)).default;

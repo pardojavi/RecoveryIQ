@@ -1626,7 +1626,7 @@ var S = {
 };
 
 /* Medias de referencia (60 días) — las lee calcScore() */
-var avgHRV = 0, avgHR = 0, avgSleep = 0;
+var avgHRV = 0, avgHR = 0, avgSleep = 0, avgMinHR = 0;
 /* Media de temperatura absoluta de la mu&#241;eca (°C) en la ventana. 0 = la
    fuente solo informa desviaciones (Garmin), que ya vienen relativas a tu base. */
 var avgTemp = 0;
@@ -1995,12 +1995,93 @@ function numOr(){
   return null;
 }
 
+/* Duraciones de los picos de potencia que se muestran y se pasan a la IA. */
+var PEAK_SECS  = [60, 300, 480, 600, 1200, 3600];
+var PEAK_LABEL = { 60:'1 min', 300:'5 min', 480:'8 min', 600:'10 min',
+                   1200:'20 min', 3600:'1 h' };
+var PEAK_SHORT = { 60:'1m', 300:'5m', 480:'8m', 600:'10m', 1200:'20m', 3600:'1h' };
+var PEAK_LONG  = { 60:'1min', 300:'5min', 480:'8min', 600:'10min',
+                   1200:'20min', 3600:'1hour' };
+
+/* La curva de potencia de Intervals.icu llega como {secs:[], watts:[]}.
+   Se aceptan también las variantes con `values` y las listas de curvas. */
+function curveArrays(c){
+  if (!c || typeof c !== 'object') return null;
+  if (Object.prototype.toString.call(c) === '[object Array]') {
+    for (var i = 0; i < c.length; i++) {
+      var found = curveArrays(c[i]);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (c.curves) return curveArrays(c.curves);
+  if (c.data) {
+    var inData = curveArrays(c.data);
+    if (inData) return inData;
+  }
+  var secs  = c.secs || c.seconds || c.durations;
+  var watts = c.watts || c.values || c.power;
+  if (Object.prototype.toString.call(secs) === '[object Array]' &&
+      Object.prototype.toString.call(watts) === '[object Array]' &&
+      secs.length === watts.length && secs.length) return { secs:secs, watts:watts };
+  return null;
+}
+
+/* Potencia sostenida durante `target` segundos. Si la curva no trae ese punto
+   exacto se interpola entre los dos inmediatos; si la sesión fue más corta,
+   no hay dato (null) y así se lo decimos a la IA. */
+function peakAtSecs(curve, target){
+  var pairs = curveArrays(curve);
+  if (!pairs) return null;
+  var secs = pairs.secs, watts = pairs.watts, i, s, v;
+  var usable = [];
+  for (i = 0; i < secs.length; i++) {
+    s = parseFloat(secs[i]); v = parseFloat(watts[i]);
+    if (isFinite(s) && isFinite(v) && v > 0) usable.push({ s:s, v:v });
+  }
+  if (!usable.length) return null;
+  for (i = 0; i < usable.length; i++) if (usable[i].s === target) return Math.round(usable[i].v);
+  if (target < usable[0].s || target > usable[usable.length - 1].s) return null;
+  for (i = 1; i < usable.length; i++) {
+    if (usable[i].s >= target) {
+      var a = usable[i - 1], b = usable[i];
+      if (b.s === a.s) return Math.round(b.v);
+      return Math.round(a.v + (b.v - a.v) * (target - a.s) / (b.s - a.s));
+    }
+  }
+  return null;
+}
+
+/* Picos de la sesión: primero los campos directos de la fuente y, si no
+   están, los que podamos sacar de la curva incrustada en la actividad. */
+function actPeaks(a){
+  var out = {}, i, secs, short, long, keys, j, v, curve;
+  curve = (a && (a.powerCurve || a.icu_power_curve || a.power_curve)) || null;
+  for (i = 0; i < PEAK_SECS.length; i++) {
+    secs = PEAK_SECS[i]; short = PEAK_SHORT[secs]; long = PEAK_LONG[secs];
+    keys = [
+      'peak_power_' + short, 'peak_' + short + '_power', 'peak_' + short,
+      'peakPower' + short, 'maxPower' + short, 'bestPower' + short,
+      'power_peak_' + short, 'power_' + short + '_peak',
+      'peak_power_' + long, 'peak_' + long + '_power', 'peak_' + long,
+      'peakPower' + long, 'maxPower' + long, 'bestPower' + long,
+      'power_peak_' + long, 'power_' + long + '_peak'
+    ];
+    v = null;
+    for (j = 0; j < keys.length && v === null; j++) v = numOr(a && a[keys[j]]);
+    if (v === null && curve) v = peakAtSecs(curve, secs);
+    if (v !== null) out[secs] = Math.round(v);
+  }
+  return out;
+}
+
 /* Métricas de rendimiento normalizadas (vatios, FC, cadencia…). */
 function actPerf(a){
   if (!a) return null;
   return {
     powerAvg:  numOr(a.avg_power, a.average_power, a.avgPower, a.averagePower),
-    powerNp:   numOr(a.normalized_power, a.normalizedPower, a.np_power, a.npPower),
+    powerNp:   numOr(a.normalized_power, a.normalizedPower, a.np_power, a.npPower,
+                     a.norm_power, a.icu_weighted_avg_watts),
     powerMax:  numOr(a.max_power, a.maxPower),
     hrAvg:     numOr(a.average_heartrate, a.avg_hr, a.averageHR, a.averageHr, a.avgHeartRate),
     hrMax:     numOr(a.max_heartrate, a.max_hr, a.maxHR, a.maxHeartRate),
@@ -2010,7 +2091,8 @@ function actPerf(a){
     elevation: numOr(a.total_elevation_gain, a.elevation_gain, a.elevationGain, a.totalElevationGain),
     calories:  numOr(a.calories),
     kj:        numOr(a.kj),
-    load:      actLoad(a)
+    load:      actLoad(a),
+    peaks:     actPeaks(a)
   };
 }
 
@@ -2019,10 +2101,14 @@ function actMetricRows(a, weight){
   var m = actPerf(a), h = '';
   function add(label, val){ if (val !== null && val !== undefined && val !== '') h += row(label, val); }
 
-  if (m.powerAvg || m.powerNp || m.powerMax) {
+  if (m.powerAvg || m.powerNp || m.powerMax || Object.keys(m.peaks).length) {
     add('Potencia media',  m.powerAvg ? Math.round(m.powerAvg) + ' W' : null);
     add('Potencia normalizada', m.powerNp ? Math.round(m.powerNp) + ' W' : null);
     add('Potencia m&#225;xima', m.powerMax ? Math.round(m.powerMax) + ' W' : null);
+    for (var pi = 0; pi < PEAK_SECS.length; pi++) {
+      var ps = PEAK_SECS[pi];
+      add('Pico ' + PEAK_LABEL[ps], m.peaks[ps] ? m.peaks[ps] + ' W' : null);
+    }
     var wp = m.powerNp || m.powerAvg;
     if (wp && weight) add('Watios / kg', round1(wp / weight) + ' W/kg');
   }
@@ -2207,6 +2293,8 @@ function normalizeRows(list){
       id:         w.id,
       hrv:        (w.hrv || w.hrvAvg || null),
       restingHR:  (w.restingHR || w.resting_hr || null),
+      minHR:      (w.minHR || w.min_hr || w.minHeartRate ||
+                   w.minimumHeartRate || w.lowestHR || null),
       sleep:      getSleep(w),
       stages:     readSleepStages(w),
       ctl:        w.ctl || 0,
@@ -2223,22 +2311,25 @@ function normalizeRows(list){
 function assembleData(rows, activities){
   if (rows.length > 60) rows = rows.slice(rows.length - 60);
 
-  var hs = [], rs = [], ss = [], ts = [], i;
+  var hs = [], rs = [], ms = [], ss = [], ts = [], i;
   for (i = 0; i < rows.length; i++) {
     if (rows[i].hrv && rows[i].hrv > 0) hs.push(rows[i].hrv);
     if (rows[i].restingHR && rows[i].restingHR > 0) rs.push(rows[i].restingHR);
+    if (rows[i].minHR && rows[i].minHR > 0) ms.push(rows[i].minHR);
     if (rows[i].sleep !== null) ss.push(rows[i].sleep);
     if (rows[i].tempC !== null && rows[i].tempC !== undefined && isFinite(rows[i].tempC)) {
       ts.push(rows[i].tempC);
     }
   }
-  var sh = 0, sr = 0, ss2 = 0, st = 0;
+  var sh = 0, sr = 0, sm = 0, ss2 = 0, st = 0;
   for (i = 0; i < hs.length; i++) sh += hs[i];
   for (i = 0; i < rs.length; i++) sr += rs[i];
+  for (i = 0; i < ms.length; i++) sm += ms[i];
   for (i = 0; i < ss.length; i++) ss2 += ss[i];
   for (i = 0; i < ts.length; i++) st += ts[i];
   avgHRV   = hs.length ? sh / hs.length : 0;
   avgHR    = rs.length ? sr / rs.length : 0;
+  avgMinHR = ms.length ? sm / ms.length : 0;
   avgSleep = ss.length ? ss2 / ss.length : 0;
   // Temperatura absoluta media de la ventana: es la "base" contra la que se
   // convierte un registro que solo traiga grados (Garmin va con desviaciones).
@@ -2256,6 +2347,7 @@ function assembleData(rows, activities){
     dailyMap[r.id] = {
       hrv:       r.hrv,
       restingHR: r.restingHR,
+      minHR:     r.minHR || null,
       sleep:     r.sleep,
       stages:    r.stages,
       ctl:       ctl,
@@ -2468,6 +2560,37 @@ function apiFetch(url, authHeader){
   return tryNext(0);
 }
 
+/* Las sesiones de Intervals.icu no traen los picos en el listado: están en
+   /activity/{id}/power-curve. Se piden solo para ciclismo con potencia y de
+   forma secuencial (la curva es un extra: si falla, la carga sigue). */
+function fetchPeakPowers(data, authHeader){
+  if (!data || !data.activities || !data.activities.length) return Promise.resolve(data);
+  var targets = [], i, a, m, id;
+  for (i = 0; i < data.activities.length && targets.length < 12; i++) {
+    a = data.activities[i];
+    if (!a || sportKey(a) !== 'ciclismo') continue;
+    m = actPerf(a);
+    if (!m.powerAvg && !m.powerNp && !m.powerMax) continue;
+    id = a.id || a.activityId || a.activity_id;
+    if (!id || a.powerCurve) continue;
+    targets.push({ a:a, id:id });
+  }
+  if (!targets.length) return Promise.resolve(data);
+
+  var base = 'https://intervals.icu/api/v1/activity/', idx = 0;
+  function next(){
+    if (idx >= targets.length) return Promise.resolve(data);
+    var t = targets[idx++];
+    return apiFetch(base + encodeURIComponent(t.id) + '/power-curve', authHeader)
+      .then(function(curve){
+        if (curve && typeof curve === 'object') t.a.powerCurve = curve;
+      })
+      .catch(function(){ /* los picos son opcionales */ })
+      .then(next);
+  }
+  return next();
+}
+
 function fetchData(){
   if (S.source === 'garmin') return fetchGarminData();
 
@@ -2484,7 +2607,7 @@ function fetchData(){
       if (!wl || (wl.length === 0)) throw new Error('NO_DATA');
       var data = buildData(wl, res[1]);
       if (!data) throw new Error('NO_DATA');
-      return data;
+      return fetchPeakPowers(data, authHeader);
     });
 }
 
@@ -3129,7 +3252,7 @@ function garminToRows(g){
   function row(id){
     if (!id) return null;
     if (!rows[id]) {
-      rows[id] = { id:id, hrv:null, restingHR:null, sleep:null, stages:null,
+      rows[id] = { id:id, hrv:null, restingHR:null, minHR:null, sleep:null, stages:null,
                    ctl:0, atl:0, body:null,
                    tempDev:null, tempC:null, tempCalib:null,
                    steps:null, hrDay:null };
@@ -3165,6 +3288,12 @@ function garminToRows(g){
     if (v2) {
       var r2 = row(id2);
       if (r2 && !r2.restingHR) r2.restingHR = Math.round(v2);
+    }
+    var v2m = numv(it.minHeartRate) || numv(it.minimumHeartRate) ||
+              numv(it.lowestHeartRate);
+    if (v2m) {
+      var r2m = row(id2);
+      if (r2m && !r2m.minHR) r2m.minHR = Math.round(v2m);
     }
   }
 
@@ -3221,6 +3350,9 @@ function garminToRows(g){
     if (hv && !r3.hrv) r3.hrv = Math.round(hv);
     var rh = numv(s.restingHeartRate);
     if (rh && !r3.restingHR) r3.restingHR = Math.round(rh);
+    var mh = numv(s.minHeartRate) || numv(s.minimumHeartRate) ||
+             numv(s.lowestHeartRate) || numv(s.minSleepHeartRate);
+    if (mh && !r3.minHR) r3.minHR = Math.round(mh);
   }
 
   /* Temperatura de la mu&#241;eca (endpoint /sleep-service/sleep/dailySleepData):
@@ -3348,8 +3480,15 @@ function garminActivities(g){
       average_heartrate: a.averageHR || a.averageHr || null,
       max_heartrate:     a.maxHR || a.maxHeartRate || null,
       avg_power:         a.avgPower || a.averagePower || null,
-      normalized_power:  a.normalizedPower || a.npPower || null,
+      normalized_power:  a.normalizedPower || a.npPower || a.icuWeightedAvgWatts || null,
       max_power:         a.maxPower || null,
+      peak_power_1m:     a.peakPower1m || a.peakPower1min || a.maxPower1min || null,
+      peak_power_5m:     a.peakPower5m || a.peakPower5min || a.maxPower5min || null,
+      peak_power_8m:     a.peakPower8m || a.peakPower8min || a.maxPower8min || null,
+      peak_power_10m:    a.peakPower10m || a.peakPower10min || a.maxPower10min || null,
+      peak_power_20m:    a.peakPower20m || a.peakPower20min || a.maxPower20min || null,
+      peak_power_1h:     a.peakPower1h || a.peakPower1hour || a.maxPower1hour || null,
+      powerCurve:        a.powerCurve || a.power_curve || null,
       avg_cadence:       a.averageCadence || a.avgCadence || null,
       average_speed:     a.averageSpeed || null,
       elevation_gain:    a.totalElevationGain || a.elevationGain || null,
@@ -4570,11 +4709,12 @@ function renderCalendar(){
 
   var first = new Date(S.calY, S.calM, 1, 12, 0, 0, 0);
   var daysInMonth = new Date(S.calY, S.calM + 1, 0, 12, 0, 0, 0).getDate();
-  var offset = first.getDay();
+  // Semana de lunes a domingo (domingo al final).
+  var offset = (first.getDay() + 6) % 7;
   var tk = todayKey();
 
   var html = '', i;
-  var dows = ['D','L','M','X','J','V','S'];
+  var dows = ['L','M','X','J','V','S','D'];
   for (i = 0; i < 7; i++) html += '<div class="cal-dow">' + dows[i] + '</div>';
 
   for (i = 0; i < offset; i++) html += '<div class="cal-day empty"></div>';
@@ -5127,6 +5267,12 @@ function activityContextText(a, d, key){
   L.push('Potencia media: ' + actVal(m.powerAvg ? Math.round(m.powerAvg) : null, ' W') +
          '. Potencia normalizada: ' + actVal(m.powerNp ? Math.round(m.powerNp) : null, ' W') +
          '. Potencia máxima: ' + actVal(m.powerMax ? Math.round(m.powerMax) : null, ' W') + '.');
+  var peakParts = [];
+  for (var pi = 0; pi < PEAK_SECS.length; pi++) {
+    var ps = PEAK_SECS[pi];
+    peakParts.push(PEAK_LABEL[ps] + ': ' + actVal(m.peaks[ps], ' W'));
+  }
+  L.push('Picos de potencia (mejores esfuerzos medios): ' + peakParts.join('; ') + '.');
   if (w) {
     L.push('Peso ' + (wDay ? 'de ese día' : 'más reciente conocido') + ': ' + w + ' kg. ' +
            'Potencia por kilo: ' +
@@ -5148,7 +5294,9 @@ function activityContextText(a, d, key){
   L.push('RECUPERACIÓN DE ESE DÍA:');
   L.push('HRV: ' + actVal(d.hrv, ' ms') + ' (tu base: ' + round1(avgHRV) + ' ms). ' +
          'FC nocturna / en reposo: ' + actVal(d.restingHR, ' bpm') +
-         ' (tu base: ' + round1(avgHR) + ' bpm).');
+         ' (tu base: ' + round1(avgHR) + ' bpm). ' +
+         'FC mínima registrada: ' + actVal(d.minHR, ' bpm') +
+         (avgMinHR ? ' (tu base: ' + round1(avgMinHR) + ' bpm)' : '') + '.');
   L.push('Sueño: ' + actVal(d.sleep !== null ? fmtSleep(d.sleep) : null, ' h') +
          (sleep ? ' (profundo ' + fmtSleep(sleep.deep) + ' h, REM ' + fmtSleep(sleep.rem) +
                   ' h, ligero ' + fmtSleep(sleep.light) + ' h, despierto ' +
@@ -5161,7 +5309,8 @@ function activityContextText(a, d, key){
            ' °C frente a tu base.');
   }
   L.push('CTL: ' + d.ctl + ', ATL: ' + d.atl + ', TSB: ' + d.tsb +
-         ', índice de recuperación: ' + d.score + '/100.');
+         ', índice de recuperación: ' + d.score + '/100. ' +
+         'Estado de recuperación: ' + scoreLabel(d.score) + '.');
   if (d.acts && d.acts.length > 1) {
     var others = [];
     for (var i = 0; i < d.acts.length; i++) {
@@ -5194,11 +5343,13 @@ function buildActivitySystemPrompt(a, d, key, followUp){
            'Genera un INFORME DE RENDIMIENTO con estas cinco partes, cada una en su párrafo:\n' +
            '1) VEREDICTO: di claramente si ha rendido bien, normal o mal, y por qué en una frase.\n' +
            '2) VATIOS: valora la potencia media y normalizada frente a su media habitual y frente a su peso (W/kg). ' +
-           'Di explícitamente si los vatios han sido buenos, normales o malos. Si no hay dato de potencia, dilo y no lo inventes.\n' +
+           'Comenta también los picos de 1 min, 5 min, 8 min, 10 min, 20 min y 1 hora: cuáles destacan y si el esfuerzo se sostuvo o fue solo un pico puntual. ' +
+            'Di explícitamente si los vatios han sido buenos, normales o malos. Si no hay dato de potencia, dilo y no lo inventes.\n' +
            '3) PULSO Y ESFUERZO: contrasta la FC media y máxima con su FC nocturna/de reposo y con la carga (TSS). ' +
            'Señala si el esfuerzo cardiaco fue caro o eficiente para la potencia producida.\n' +
            '4) RECUPERACIÓN: cruza la sesión con la HRV de ese día frente a su base, las horas de sueño y sus fases, ' +
-           'la FC nocturna, el peso y la temperatura. Explica si el cuerpo estaba preparado y cómo pudo afectar al resultado.\n' +
+           'la FC nocturna, la FC mínima, el peso, la temperatura y el estado de recuperación (índice y clasificación). ' +
+            'Explica si el cuerpo estaba preparado y cómo pudo afectar al resultado.\n' +
            '5) DÓNDE MEJORAR: dos o tres consejos concretos. Termina invitando a preguntar.\n' +
            'Máximo 350 palabras. Sé honesto pero constructivo. No des diagnósticos médicos. ' +
            'Usa solo los datos siguientes, sin inventar valores.\n';

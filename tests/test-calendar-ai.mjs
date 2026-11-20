@@ -59,6 +59,8 @@ const setup = `
     moving_time: 5400, distance: 42000,
     average_heartrate: 148, max_heartrate: 172,
     avg_power: 245, normalized_power: 258, max_power: 410,
+    peak_power_1m: 410, peak_power_5m: 330, peak_power_8m: 310,
+    peak_power_10m: 300, peak_power_20m: 280, peak_power_1h: 255,
     avg_cadence: 88, average_speed: 7.8, total_elevation_gain: 320,
     calories: 760, kj: 1980, icu_training_load: 82
   };
@@ -67,6 +69,7 @@ const setup = `
                distance: 2400, average_heartrate: 98 };
   data.dailyMap[tk].acts = [ride, walk];
   data.dailyMap[tk].body = {weight:72};
+  data.dailyMap[tk].minHR = 47;
   data.today.weight = 72;
   data.dailyMap[yesterday].acts = [{
     id:'ride-ayer', type:'Ride', name:'Rodaje suave',
@@ -80,6 +83,13 @@ const setup = `
   window.__tk = tk;
 `;
 run(setup);
+
+console.log('\n== Calendario: semana de lunes a domingo ==');
+const dows = [...w.document.querySelectorAll('#cal-grid .cal-dow')].map(e => e.textContent);
+eq(dows.join(''), 'LMXJVSD', 'la semana empieza en lunes y acaba en domingo');
+const firstDow = new Date(run('S.calY'), run('S.calM'), 1).getDay();
+eq($('cal-grid').querySelectorAll('.cal-day.empty').length, (firstDow + 6) % 7,
+   'el hueco inicial corresponde a esa semana');
 
 console.log('\n== Desplegable de actividades del día ==');
 const cell = w.document.querySelector('.cal-day[data-has="1"][data-key="' + run('window.__tk') + '"]');
@@ -101,6 +111,12 @@ ok(text.indexOf('88 rpm') >= 0, 'cadencia');
 ok(text.indexOf('42 km') >= 0, 'distancia');
 ok(text.indexOf('320 m') >= 0, 'desnivel');
 ok(text.indexOf('82') >= 0, 'carga TSS');
+ok(text.indexOf('Pico 1 min') >= 0 && text.indexOf('410 W') >= 0, 'pico de 1 minuto');
+ok(text.indexOf('Pico 5 min') >= 0 && text.indexOf('330 W') >= 0, 'pico de 5 minutos');
+ok(text.indexOf('Pico 8 min') >= 0 && text.indexOf('310 W') >= 0, 'pico de 8 minutos');
+ok(text.indexOf('Pico 10 min') >= 0 && text.indexOf('300 W') >= 0, 'pico de 10 minutos');
+ok(text.indexOf('Pico 20 min') >= 0 && text.indexOf('280 W') >= 0, 'pico de 20 minutos');
+ok(text.indexOf('Pico 1 h') >= 0 && text.indexOf('255 W') >= 0, 'pico de 1 hora');
 ok(text.indexOf('Paseo') >= 0, 'la segunda actividad también está');
 
 console.log('\n== Contexto que recibe la IA ==');
@@ -121,6 +137,14 @@ ok(sys.indexOf('258 W') >= 0, 'incluye la potencia normalizada');
 ok(sys.indexOf('234 W') >= 0, 'incluye la media habitual de ciclismo (258 y 210 → 234)');
 ok(sys.indexOf('HRV') >= 0, 'incluye la HRV del día');
 ok(sys.indexOf('FC nocturna') >= 0, 'incluye la FC nocturna');
+ok(sys.indexOf('FC mínima registrada') >= 0 && sys.indexOf('47 bpm') >= 0,
+   'incluye el pulso mínimo');
+ok(sys.indexOf('Estado de recuperación') >= 0, 'incluye el estado de recuperación');
+ok(sys.indexOf('Picos de potencia') >= 0, 'incluye los picos de potencia');
+ok(sys.indexOf('8 min: 310 W') >= 0 && sys.indexOf('1 h: 255 W') >= 0,
+   'pasa todos los picos (8 min y 1 h)');
+ok(sys.indexOf('picos de 1 min, 5 min, 8 min, 10 min, 20 min y 1 hora') >= 0,
+   'el prompt pide analizar los picos');
 ok(sys.indexOf('Sueño') >= 0, 'incluye el sueño');
 ok(sys.indexOf('Peso registrado') >= 0, 'incluye el peso');
 ok(sys.indexOf('W/kg') >= 0, 'incluye vatios por kilo');
@@ -193,6 +217,68 @@ eq(g[3], 85, 'cadencia de Garmin');
 eq(g[4], 120, 'desnivel de Garmin');
 eq(g[5], 640, 'calorías de Garmin');
 eq(g[6], 70, 'carga de Garmin');
+
+console.log('\n== Picos desde la curva de potencia ==');
+const curvePeaks = run(`(function(){
+  var a = {avg_power:200, powerCurve:{
+    secs:[60,300,480,600,1200,3600], watts:[400,320,300,290,270,240]
+  }};
+  return actPerf(a).peaks;
+})()`);
+eq(curvePeaks[60], 400, 'pico de 1 min desde la curva');
+eq(curvePeaks[480], 300, 'pico de 8 min desde la curva');
+eq(curvePeaks[3600], 240, 'pico de 1 h desde la curva');
+eq(run('peakAtSecs({secs:[60,600],watts:[400,300]}, 300)'), 356,
+   'interpolación cuando la curva no trae el punto exacto');
+eq(run('peakAtSecs({secs:[60],watts:[400]}, 3600)'), null,
+   'sin dato si la sesión duró menos de una hora');
+eq(run('curveArrays([{secs:[60],watts:[123]}]).watts[0]'), 123,
+   'acepta también una lista de curvas');
+eq(run('actPerf({norm_power:222}).powerNp'), 222,
+   'normalizada de Intervals.icu (norm_power)');
+eq(run('actPerf({icu_weighted_avg_watts:231}).powerNp'), 231,
+   'normalizada como icu_weighted_avg_watts');
+
+console.log('\n== Curvas se piden a Intervals.icu ==');
+run(`
+  window.__curveUrls = [];
+  window.__origApiFetch = apiFetch;
+  apiFetch = function(url){
+    window.__curveUrls.push(url);
+    return Promise.resolve({secs:[60,300,480,600,1200,3600],
+                            watts:[390,315,295,285,265,235]});
+  };
+  fetchPeakPowers(S.data, 'Basic prueba').then(function(){ window.__curveDone = true; });
+`);
+await wait(30);
+const curveUrls = run('window.__curveUrls');
+eq(run('window.__curveDone'), true, 'termina la carga de curvas');
+ok(curveUrls.length === 2, 'pide una curva por sesión de ciclismo (2)', curveUrls.length);
+ok(curveUrls[0].indexOf('/activity/ride-hoy/power-curve') >= 0,
+   'usa el endpoint de potencia de la actividad');
+eq(run('actPerf(S.data.activities[1]).peaks[300]'), 315,
+   'la curva descargada se usa en el desplegable y en la IA');
+ok(!run('actPerf(S.data.dailyMap[window.__tk].acts[1]).peaks[480]'),
+   'la caminata no recibe picos de potencia');
+run('apiFetch = window.__origApiFetch');
+
+console.log('\n== Pulso mínimo y picos de Garmin ==');
+eq(run(`normalizeRows([{id:todayKey(), min_hr:46, hrv:50}])[0].minHR`), 46,
+   'normalizeRows lee min_hr de Intervals.icu');
+const gmin = run(`(function(){
+  var rows = garminToRows({sleep:[{calendarDate:todayKey(),
+    sleepTimeSeconds:28800, minHeartRate:44}]});
+  return rows[0].minHR;
+})()`);
+eq(gmin, 44, 'garminToRows lee la FC mínima del sueño');
+const gpeak = run(`(function(){
+  var a = garminActivities({activities:[{
+    activityId:101, activityName:'Ciclismo', startTimeLocal: todayKey()+' 10:00:00',
+    activityType:{typeKey:'cycling'}, avgPower:230, peakPower8m:318
+  }]});
+  return actPerf(a[0]).peaks[480];
+})()`);
+eq(gpeak, 318, 'Garmin: pico de 8 minutos normalizado');
 
 console.log('\n== Errores JS ==');
 ok(!$('js-err') || !$('js-err').classList.contains('show'), 'ningún error JS',

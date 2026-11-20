@@ -1,8 +1,9 @@
 /* RecoveryIQ — pruebas de la 2ª vía de datos (Garmin Connect) + regresión */
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { JSDOM } from 'jsdom';
 
-const APP = '/Users/javier.pardo/RecoveryIQ/recovery-app.html';
+const APP = fileURLToPath(new URL('../recovery-app.html', import.meta.url));
 const html = fs.readFileSync(APP, 'utf8');
 const MYPROXY = (html.match(/var MY_PROXY = '([^']+)'/) || [])[1] || '';
 
@@ -774,7 +775,7 @@ ok($('diag-temp').innerHTML.indexOf('hoy <b>+0.4</b>') >= 0,
 eq(run('garminWarn(window.__dgT)'), '', 'sin avisos si hay sueño y HRV');
 
 console.log('\n== worker.js pide la temperatura de la muñeca ==');
-const workerSrc = fs.readFileSync('/Users/javier.pardo/RecoveryIQ/worker.js', 'utf8');
+const workerSrc = fs.readFileSync(fileURLToPath(new URL('../worker.js', import.meta.url)), 'utf8');
 ok(workerSrc.indexOf('/sleep-service/sleep/dailySleepData?date=') >= 0,
    'consulta dailySleepData por día');
 ok(workerSrc.indexOf('i < 14') >= 0, 'limita a los últimos 14 días');
