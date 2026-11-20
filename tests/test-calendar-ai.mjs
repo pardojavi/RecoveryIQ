@@ -168,6 +168,7 @@ ok(sys.indexOf('Coggan') >= 0, 'cita el modelo NP/TSS de Coggan');
 ok(sys.indexOf('Monod y Scherrer') >= 0, 'cita el modelo CP/W′');
 ok(sys.indexOf('Banister') >= 0 && sys.indexOf('ACWR') >= 0,
    'cita Banister y el ratio agudo/crónico');
+ok(sys.indexOf('Gabbett') >= 0, 'cita a Gabbett para el ACWR');
 ok(sys.indexOf('7–9 horas') >= 0, 'usa el rango de sueño recomendado');
 ok(sys.indexOf('Ratio de carga aguda/crónica') >= 0 && sys.indexOf('1.06') >= 0,
    'calcula el ratio ATL/CTL (72/68)');

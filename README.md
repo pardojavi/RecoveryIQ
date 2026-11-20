@@ -501,8 +501,8 @@ que cite el marco correspondiente:
 - **Recuperación con evidencia**: HRV solo frente a la base individual, sueño
   frente al rango recomendado de 7–9 h y sus fases, FC nocturna/mínima,
   temperatura, balance de carga de Banister (TSB) y ratio agudo/crónico
-  ATL/CTL como orientación (0,8–1,3; por encima de 1,5, mayor riesgo según la
-  literatura sobre ACWR).
+  ATL/CTL como orientación (0,8–1,3; por encima de 1,5, mayor riesgo según
+  Gabbett y sus trabajos sobre ACWR).
 
 También se cruzan el **peso y los W/kg**, la media de potencia de tus propias
 sesiones y el **estado de recuperación** del día. El resultado se guarda durante
@@ -720,7 +720,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 ## 9. Verificación
 
 Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
-(**679 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+(**680 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
 `tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
@@ -803,7 +803,7 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
 
-### `test-calendar-ai.mjs` — 101 aserciones
+### `test-calendar-ai.mjs` — 102 aserciones
 
 - Semana del calendario de lunes a domingo (rótulos y casillas vacías iniciales).
 - Desplegable del día con 2 sesiones: nombre personalizado, potencia media,
@@ -814,7 +814,7 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   estado de recuperación, sueño, peso y W/kg.
 - Criterios científicos: umbral estimado desde el mejor 20 min, IF, TSS de
   Coggan, índice de variabilidad, eficiencia NP/FC, CP/W′ de Monod y Scherrer,
-  Banister, ACWR, rango de sueño 7–9 h y ratio ATL/CTL.
+  Banister, Gabbett (ACWR), rango de sueño 7–9 h y ratio ATL/CTL.
 - Informe pintado, caché en `S.activityReports`, preguntas rápidas, campo libre
   y tecla Enter: segunda llamada con 600 tokens, prompt en modo pregunta y el
   informe anterior como contexto. El hilo sobrevive a repintar el calendario.
