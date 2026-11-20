@@ -624,6 +624,79 @@ button{border:0; background:none; cursor:pointer; padding:0;}
 .dd-sub-title{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--pink); margin-bottom:9px;}
 .dd-notes{font-size:13px; color:var(--text2); line-height:1.55; margin-top:9px;}
 
+/* Desplegable de actividades dentro del detalle del día */
+.act-drop{margin-top:14px; padding-top:13px; border-top:1px dashed var(--border);}
+.act-drop>summary{
+  list-style:none; cursor:pointer;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.7px;
+  color:var(--accent2); padding:2px 0;
+}
+.act-drop>summary::-webkit-details-marker{display:none;}
+.act-drop>summary::after{content:'\25BE'; font-size:15px; line-height:1; transition:transform .2s ease;}
+.act-drop[open]>summary::after{transform:rotate(180deg);}
+.act-list{display:flex; flex-direction:column; gap:9px; margin-top:11px;}
+.act-item{background:var(--bg2); border:1px solid var(--border); border-radius:12px; overflow:hidden;}
+.act-item>summary{
+  list-style:none; cursor:pointer;
+  display:flex; align-items:center; gap:9px; padding:11px 12px;
+}
+.act-item>summary::-webkit-details-marker{display:none;}
+.act-ico-s{font-size:19px; width:24px; text-align:center; flex:0 0 auto;}
+.act-item-main{flex:1 1 auto; min-width:0;}
+.act-item-main b{display:block; font-size:13.5px; font-weight:600;}
+.act-item-main span{font-size:11px; color:var(--text3);}
+.act-item-load{flex:0 0 auto; font-size:12px; font-weight:700; color:var(--accent2); text-align:right;}
+.act-item-load small{display:block; font-size:9px; font-weight:400; color:var(--text3);}
+.act-item-body{padding:0 12px 12px; border-top:1px solid var(--border);}
+.act-item-body .dd-row{font-size:12.5px; padding:7px 0;}
+.act-item-foot{display:flex; flex-direction:column; gap:8px; margin-top:11px;}
+.btn-ai{
+  display:block; width:100%; min-height:40px;
+  background:linear-gradient(135deg, var(--accent), #8b5cf6);
+  border:0; border-radius:11px; color:#fff;
+  font-size:13px; font-weight:600;
+}
+.btn-ai:active{transform:scale(.98);}
+.btn-ai:disabled{opacity:.55;}
+.ai-report{
+  background:var(--card); border:1px solid var(--border);
+  border-left:3px solid var(--accent); border-radius:11px;
+  padding:12px; font-size:12.5px; color:var(--text2); line-height:1.55;
+  word-break:break-word;
+}
+.ai-report:empty{display:none;}
+.ai-report .ai-rep-h{
+  font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.7px;
+  color:var(--accent2); margin-bottom:7px;
+}
+.ai-report .ai-rep-q{font-weight:600; color:var(--text); margin-top:11px;}
+.ai-report p{margin:0 0 8px;}
+.ai-report p:last-child{margin-bottom:0;}
+.ai-ask-row{display:flex; gap:7px; margin-top:8px;}
+.ai-ask-input{
+  flex:1 1 auto; min-width:0;
+  background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+  color:var(--text); padding:9px 11px; font-size:13px;
+}
+.ai-ask-btn{
+  flex:0 0 auto; width:42px; border:0; border-radius:10px;
+  background:var(--accent); color:#fff; font-size:17px; font-weight:700;
+}
+.ai-ask-btn:disabled{opacity:.55;}
+.ai-quick{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+.ai-quick button{
+  background:var(--bg3); border:1px solid var(--border); color:var(--text2);
+  border-radius:99px; padding:5px 10px; font-size:11px;
+}
+.ai-typing i{
+  display:inline-block; width:6px; height:6px; margin-right:3px;
+  border-radius:50%; background:var(--accent2); animation:typing 1s infinite ease-in-out;
+}
+.ai-typing i:nth-child(2){animation-delay:.15s;}
+.ai-typing i:nth-child(3){animation-delay:.3s;}
+@keyframes typing{0%,60%,100%{opacity:.3;}30%{opacity:1;}}
+
 /* ============================================================
    INFORME
    ============================================================ */
@@ -1547,7 +1620,9 @@ var S = {
   calY:        new Date().getFullYear(),
   calM:        new Date().getMonth(),
   selectedDay: null,
-  chatHistory: []
+  chatHistory: [],
+  // Informes de rendimiento ya generados, por actividad (clave actReportKey)
+  activityReports: {}
 };
 
 /* Medias de referencia (60 días) — las lee calcScore() */
@@ -1908,6 +1983,88 @@ function actInfo(a){
     at:    h === null ? '' : (pad2(Math.floor(h)) + ':' + pad2(Math.round((h - Math.floor(h)) * 60))),
     load:  actLoad(a)
   };
+}
+
+/* Primero de los valores que tenga dato. Intervals.icu usa snake_case y
+   Garmin camelCase: así el desplegable y la IA ven siempre lo mismo. */
+function numOr(){
+  for (var i = 0; i < arguments.length; i++) {
+    var v = parseFloat(arguments[i]);
+    if (isFinite(v) && v > 0) return v;
+  }
+  return null;
+}
+
+/* Métricas de rendimiento normalizadas (vatios, FC, cadencia…). */
+function actPerf(a){
+  if (!a) return null;
+  return {
+    powerAvg:  numOr(a.avg_power, a.average_power, a.avgPower, a.averagePower),
+    powerNp:   numOr(a.normalized_power, a.normalizedPower, a.np_power, a.npPower),
+    powerMax:  numOr(a.max_power, a.maxPower),
+    hrAvg:     numOr(a.average_heartrate, a.avg_hr, a.averageHR, a.averageHr, a.avgHeartRate),
+    hrMax:     numOr(a.max_heartrate, a.max_hr, a.maxHR, a.maxHeartRate),
+    cadence:   numOr(a.avg_cadence, a.average_cadence, a.averageCadence, a.avgCadence),
+    speed:     numOr(a.average_speed, a.avg_speed, a.averageSpeed),
+    distance:  numOr(a.distance, a.distanceInMeters, a.distance_m),
+    elevation: numOr(a.total_elevation_gain, a.elevation_gain, a.elevationGain, a.totalElevationGain),
+    calories:  numOr(a.calories),
+    kj:        numOr(a.kj),
+    load:      actLoad(a)
+  };
+}
+
+/* Filas del desplegable: solo se muestra lo que la fuente realmente trae. */
+function actMetricRows(a, weight){
+  var m = actPerf(a), h = '';
+  function add(label, val){ if (val !== null && val !== undefined && val !== '') h += row(label, val); }
+
+  if (m.powerAvg || m.powerNp || m.powerMax) {
+    add('Potencia media',  m.powerAvg ? Math.round(m.powerAvg) + ' W' : null);
+    add('Potencia normalizada', m.powerNp ? Math.round(m.powerNp) + ' W' : null);
+    add('Potencia m&#225;xima', m.powerMax ? Math.round(m.powerMax) + ' W' : null);
+    var wp = m.powerNp || m.powerAvg;
+    if (wp && weight) add('Watios / kg', round1(wp / weight) + ' W/kg');
+  }
+  add('FC media',     m.hrAvg ? Math.round(m.hrAvg) + ' bpm' : null);
+  add('FC m&#225;xima', m.hrMax ? Math.round(m.hrMax) + ' bpm' : null);
+  add('Cadencia',     m.cadence ? Math.round(m.cadence) + ' rpm' : null);
+  add('Velocidad media', m.speed ? round1(m.speed * 3.6) + ' km/h' : null);
+  if (m.distance) {
+    add('Distancia', m.distance >= 1000
+      ? round1(m.distance / 1000) + ' km'
+      : Math.round(m.distance) + ' m');
+  }
+  add('Desnivel',   m.elevation ? Math.round(m.elevation) + ' m' : null);
+  add('Carga (TSS)', m.load ? m.load : null);
+  add('Calor&#237;as', m.calories ? Math.round(m.calories) + ' kcal' : null);
+  add('Energ&#237;a', m.kj ? Math.round(m.kj) + ' kJ' : null);
+  if (!h) h = '<div class="empty-note">La fuente no ha enviado m&#233;tricas detalladas de esta sesi&#243;n.</div>';
+  return h;
+}
+
+/* Identificador estable del informe: se mantiene aunque se repinte el
+   calendario al cambiar de mes o de pestaña. */
+function actReportKey(a){
+  return actDayKey(a) + '|' + (a.id || a.activityId || a.activity_id || '') + '|' +
+         (a.start_date_local || a.start_date || a.startTimeLocal || '') + '|' +
+         String(a.name || a.activityName || '').replace(/\|/g, '');
+}
+
+/* Media de potencia de las sesiones de ciclismo previas: el contraste para
+   saber si los vatios de hoy han sido buenos, normales o malos. */
+function cyclingPowerBaseline(){
+  var list = (S.data && S.data.activities) || [], vals = [], i, m, p;
+  for (i = 0; i < list.length; i++) {
+    if (sportKey(list[i]) !== 'ciclismo') continue;
+    m = actPerf(list[i]);
+    p = m.powerNp || m.powerAvg;
+    if (p) vals.push(p);
+  }
+  if (!vals.length) return null;
+  var sum = 0;
+  for (i = 0; i < vals.length; i++) sum += vals[i];
+  return { avg: Math.round(sum / vals.length), n: vals.length };
 }
 
 /* El &#237;ndice se descompone para poder explicarlo: adem&#225;s de HRV, FC,
@@ -3157,6 +3314,14 @@ function garminToRows(g){
   return out;
 }
 
+/* Garmin manda duraciones en milisegundos (1 h = 3.600.000) y Intervals en
+   segundos. Las convertimos para que los minutos del desplegable cuadren. */
+function garminSecs(v){
+  var n = parseFloat(v);
+  if (!isFinite(n) || n <= 0) return 0;
+  return Math.round(n > 86400 ? n / 1000 : n);
+}
+
 /* Actividades de Garmin al formato que consume assembleData */
 function garminActivities(g){
   var src = recordsOf(g && g.activities), out = [], i;
@@ -3175,9 +3340,21 @@ function garminActivities(g){
       start_date:  when,
       type:        (a.activityType && a.activityType.typeKey) || '',
       distance:    a.distance || 0,
-      duration:    a.duration || 0,
-      moving_time: a.movingTime || a.duration || 0,
-      average_heartrate: a.averageHR || a.averageHr || null
+      duration:    garminSecs(a.duration),
+      moving_time: garminSecs(a.movingTime || a.duration),
+      id:          a.activityId || a.summaryId || null,
+      // Métricas de rendimiento (mismas claves que Intervals.icu) para el
+      // desplegable del calendario y el informe de IA.
+      average_heartrate: a.averageHR || a.averageHr || null,
+      max_heartrate:     a.maxHR || a.maxHeartRate || null,
+      avg_power:         a.avgPower || a.averagePower || null,
+      normalized_power:  a.normalizedPower || a.npPower || null,
+      max_power:         a.maxPower || null,
+      avg_cadence:       a.averageCadence || a.avgCadence || null,
+      average_speed:     a.averageSpeed || null,
+      elevation_gain:    a.totalElevationGain || a.elevationGain || null,
+      calories:          a.calories || null,
+      icu_training_load: a.trainingLoad || a.activityTrainingLoad || null
     });
   }
   return out;
@@ -4477,6 +4654,39 @@ function showDayDetail(key){
             (S.source === 'garmin' ? 'Garmin' : 'Intervals.icu') + ' para este d&#237;a.</div>';
   }
 
+  /* Actividades del día: un desplegable con todas sus métricas y su
+     informe de rendimiento (los informes ya generados se conservan). */
+  if (d && d.acts && d.acts.length) {
+    var weight = (d.body && d.body.weight) || (S.data.today && S.data.today.weight) || null;
+    html += '<details class="act-drop"><summary>&#127942; Actividades de este d&#237;a (' +
+            d.acts.length + ')</summary><div class="act-list">';
+    for (var ai = 0; ai < d.acts.length; ai++) {
+      var a = d.acts[ai], info = actInfo(a);
+      var saved = S.activityReports[actReportKey(a)];
+      html += '<details class="act-item"' + (ai === 0 ? ' open' : '') + '>' +
+        '<summary>' +
+          '<span class="act-ico-s">' + info.icon + '</span>' +
+          '<span class="act-item-main"><b>' + esc(info.name) + '</b><span>' +
+            (info.at ? info.at + ' &#183; ' : '') +
+            (info.mins ? info.mins + ' min' : 'Sin duraci&#243;n') +
+            ((a.name && String(a.name) !== info.name) ? ' &#183; ' + esc(a.name) : '') +
+            '</span></span>' +
+          '<span class="act-item-load">' + info.load + '<small>carga</small></span>' +
+        '</summary>' +
+        '<div class="act-item-body">' + actMetricRows(a, weight) +
+          '<div class="act-item-foot">' +
+            '<button class="btn-ai" data-act-report="' + ai + '" data-day="' + esc(key) + '">' +
+              '&#129302; ' + (saved ? 'Actualizar informe de rendimiento'
+                                   : 'Informe de rendimiento') + '</button>' +
+            '<div class="ai-report" data-act-report-out="' + ai + '" data-day="' + esc(key) + '">' +
+              renderActReportBox(saved, key, ai) + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</details>';
+    }
+    html += '</div></details>';
+  }
+
   if (lg) {
     html += '<div class="dd-sub"><div class="dd-sub-title">&#128221; Registro subjetivo</div>';
     if (lg.fatigue)  html += row('Cansancio', fatigueEmoji(lg.fatigue) + ' ' + lg.fatigue + '/5');
@@ -4892,6 +5102,232 @@ function diagCell(e){
   var t = 'HTTP ' + esc(e.s);
   if (e.k) t += ' &#183; ' + esc(e.k);
   return t;
+}
+
+/* ---------- 14b. INFORME DE RENDIMIENTO POR ACTIVIDAD (IA) ----------
+   Cada sesión del calendario puede analizarse cruzando sus métricas con el
+   wellness de ese mismo día. El informe se guarda en S.activityReports para
+   que siga visible al repintar el calendario, y admite preguntas posteriores. */
+function actVal(v, suffix){
+  return (v === null || v === undefined) ? 'sin dato' : String(v) + (suffix || '');
+}
+
+/* Todo lo que se le cuenta a la IA: la sesión y el contexto del día. */
+function activityContextText(a, d, key){
+  var m = actPerf(a), info = actInfo(a);
+  var wDay = (d.body && d.body.weight) || null;
+  var w = wDay || (S.data.today && S.data.today.weight) || null;
+  var base = cyclingPowerBaseline();
+  var sleep = buildSleepDetail(d.sleep, d.stages, avgSleep);
+  var L = [];
+
+  L.push('Sesión: ' + info.name + ' (' + sportKey(a) + '), ' + actDayKey(a) +
+         (info.at ? ' a las ' + info.at : '') + '.');
+  L.push('Duración: ' + (info.mins || 'sin dato') + ' min. Carga (TSS): ' + m.load + '.');
+  L.push('Potencia media: ' + actVal(m.powerAvg ? Math.round(m.powerAvg) : null, ' W') +
+         '. Potencia normalizada: ' + actVal(m.powerNp ? Math.round(m.powerNp) : null, ' W') +
+         '. Potencia máxima: ' + actVal(m.powerMax ? Math.round(m.powerMax) : null, ' W') + '.');
+  if (w) {
+    L.push('Peso ' + (wDay ? 'de ese día' : 'más reciente conocido') + ': ' + w + ' kg. ' +
+           'Potencia por kilo: ' +
+           actVal(m.powerAvg ? round1(m.powerAvg / w) : null, ' W/kg') + ' (media), ' +
+           actVal(m.powerNp ? round1(m.powerNp / w) : null, ' W/kg') + ' (normalizada).');
+  }
+  if (base) {
+    L.push('Tu media habitual de potencia en ' + base.n + ' sesiones de ciclismo: ' + base.avg + ' W.');
+  } else {
+    L.push('No hay suficientes sesiones de ciclismo con potencia para calcular tu media habitual.');
+  }
+  L.push('FC media: ' + actVal(m.hrAvg ? Math.round(m.hrAvg) : null, ' bpm') +
+         '. FC máxima: ' + actVal(m.hrMax ? Math.round(m.hrMax) : null, ' bpm') +
+         '. Cadencia: ' + actVal(m.cadence ? Math.round(m.cadence) : null, ' rpm') + '.');
+  L.push('Velocidad media: ' + actVal(m.speed ? round1(m.speed * 3.6) : null, ' km/h') +
+         '. Distancia: ' + actVal(m.distance ? round1(m.distance / 1000) : null, ' km') +
+         '. Desnivel: ' + actVal(m.elevation ? Math.round(m.elevation) : null, ' m') + '.');
+
+  L.push('RECUPERACIÓN DE ESE DÍA:');
+  L.push('HRV: ' + actVal(d.hrv, ' ms') + ' (tu base: ' + round1(avgHRV) + ' ms). ' +
+         'FC nocturna / en reposo: ' + actVal(d.restingHR, ' bpm') +
+         ' (tu base: ' + round1(avgHR) + ' bpm).');
+  L.push('Sueño: ' + actVal(d.sleep !== null ? fmtSleep(d.sleep) : null, ' h') +
+         (sleep ? ' (profundo ' + fmtSleep(sleep.deep) + ' h, REM ' + fmtSleep(sleep.rem) +
+                  ' h, ligero ' + fmtSleep(sleep.light) + ' h, despierto ' +
+                  fmtSleep(sleep.awake) + ' h; ' +
+                  (sleep.estimated ? 'fases estimadas' : 'fases reales') + ')' : '') +
+         '. Tu media de sueño: ' + round1(avgSleep) + ' h.');
+  L.push('Peso registrado ese día: ' + (wDay ? wDay + ' kg' : 'no registrado') + '.');
+  if (d.temp !== null && d.temp !== undefined) {
+    L.push('Temperatura de la muñeca: ' + (d.temp > 0 ? '+' : '') + d.temp +
+           ' °C frente a tu base.');
+  }
+  L.push('CTL: ' + d.ctl + ', ATL: ' + d.atl + ', TSB: ' + d.tsb +
+         ', índice de recuperación: ' + d.score + '/100.');
+  if (d.acts && d.acts.length > 1) {
+    var others = [];
+    for (var i = 0; i < d.acts.length; i++) {
+      if (d.acts[i] === a) continue;
+      others.push(actInfo(d.acts[i]).name + ' (' + actMinutes(d.acts[i]) + ' min)');
+    }
+    if (others.length) L.push('Otras sesiones del mismo día: ' + others.join(', ') + '.');
+  }
+  var lg = logForDate(key);
+  if (lg) {
+    L.push('Registro subjetivo: cansancio ' + actVal(lg.fatigue, '/5') +
+           ', ánimo ' + actVal(lg.mood, '/5') + ', estrés ' + actVal(lg.stress, '/5') +
+           (lg.notes ? ', notas: ' + lg.notes : '') + '.');
+  }
+  return L.join('\n');
+}
+
+function buildActivitySystemPrompt(a, d, key, followUp){
+  var head;
+  if (followUp) {
+    head = 'Eres RecoveryIQ, analista de rendimiento deportivo. Ya has entregado un ' +
+           'informe de rendimiento de esta sesión. Responde ahora a la ÚLTIMA pregunta ' +
+           'del atleta sobre esa misma sesión, en español, texto plano (sin markdown), ' +
+           'de forma breve y concreta (máximo 180 palabras). Usa como contexto el ' +
+           'informe anterior y los datos siguientes. Sé honesto, no des diagnósticos ' +
+           'médicos y no repitas el informe completo.\n';
+  } else {
+    head = 'Eres RecoveryIQ, analista de rendimiento deportivo. Responde siempre en español, ' +
+           'en texto plano (sin markdown, sin asteriscos, sin tablas) y de forma concisa.\n' +
+           'Genera un INFORME DE RENDIMIENTO con estas cinco partes, cada una en su párrafo:\n' +
+           '1) VEREDICTO: di claramente si ha rendido bien, normal o mal, y por qué en una frase.\n' +
+           '2) VATIOS: valora la potencia media y normalizada frente a su media habitual y frente a su peso (W/kg). ' +
+           'Di explícitamente si los vatios han sido buenos, normales o malos. Si no hay dato de potencia, dilo y no lo inventes.\n' +
+           '3) PULSO Y ESFUERZO: contrasta la FC media y máxima con su FC nocturna/de reposo y con la carga (TSS). ' +
+           'Señala si el esfuerzo cardiaco fue caro o eficiente para la potencia producida.\n' +
+           '4) RECUPERACIÓN: cruza la sesión con la HRV de ese día frente a su base, las horas de sueño y sus fases, ' +
+           'la FC nocturna, el peso y la temperatura. Explica si el cuerpo estaba preparado y cómo pudo afectar al resultado.\n' +
+           '5) DÓNDE MEJORAR: dos o tres consejos concretos. Termina invitando a preguntar.\n' +
+           'Máximo 350 palabras. Sé honesto pero constructivo. No des diagnósticos médicos. ' +
+           'Usa solo los datos siguientes, sin inventar valores.\n';
+  }
+  return head + '\nDATOS DE LA SESIÓN Y DEL DÍA —\n' + activityContextText(a, d, key);
+}
+
+/* El historial empieza con un mensaje de usuario (lo exige la API de
+   Anthropic) que es solo semilla: no se muestra en la interfaz. */
+function buildActivityApiMessages(hist){
+  var src = hist.slice(-8), out = [], i, last;
+  for (i = 0; i < src.length; i++) {
+    last = out.length ? out[out.length - 1] : null;
+    if (last && last.role === src[i].role) last.content += '\n\n' + src[i].content;
+    else out.push({ role: src[i].role, content: src[i].content });
+  }
+  while (out.length && out[0].role !== 'user') out.shift();
+  return out;
+}
+
+function renderActReportBox(st, key, idx){
+  if (!st || !st.history) return '';
+  var h = '<div class="ai-rep-h">&#129302; Informe de rendimiento</div>', i, msg;
+  for (i = 0; i < st.history.length; i++) {
+    msg = st.history[i];
+    if (msg.synthetic) continue;
+    if (msg.role === 'user') h += '<div class="ai-rep-q">T&#250;: ' + text2html(msg.content) + '</div>';
+    else h += '<div class="ai-rep-a">' + text2html(msg.content) + '</div>';
+  }
+  h += '<div class="ai-quick">' +
+         '<button data-act-q="&#191;D&#243;nde puedo mejorar?">D&#243;nde mejorar</button>' +
+         '<button data-act-q="&#191;Por qu&#233; he rendido as&#237;?">Por qu&#233; as&#237;</button>' +
+         '<button data-act-q="&#191;Qu&#233; papel ha jugado mi sue&#241;o?">Efecto del sue&#241;o</button>' +
+       '</div>' +
+       '<div class="ai-ask-row">' +
+         '<input class="ai-ask-input" placeholder="Pregunta sobre esta sesi&#243;n&#8230;">' +
+         '<button class="ai-ask-btn" data-act-ask-send="' + idx + '" aria-label="Preguntar">&#8593;</button>' +
+       '</div>';
+  return h;
+}
+
+function findActReportBox(key, idx){
+  var dd = $('day-detail');
+  if (!dd) return null;
+  return dd.querySelector('.ai-report[data-act-report-out="' + idx + '"][data-day="' + key + '"]');
+}
+
+function getDayActivity(key, idx){
+  var d = S.data && S.data.dailyMap ? S.data.dailyMap[key] : null;
+  return { d: d, a: (d && d.acts) ? d.acts[idx] : null };
+}
+
+/* Llamada común: info nueva y preguntas de seguimiento comparten proxy,
+   contexto y caché; cambian el system prompt y el límite de tokens. */
+function callActivityAI(a, d, key, idx, question){
+  var box = findActReportBox(key, idx);
+  if (!box || !a) return;
+  if (!MY_AI_PROXY) {
+    box.innerHTML = '<div class="ai-rep-h">&#129302; Informe de rendimiento</div>' +
+      'El chat con IA no est&#225; configurado. Pon la URL de tu proxy en <b>MY_AI_PROXY</b>.';
+    return;
+  }
+
+  var rk = actReportKey(a), prev = S.activityReports[rk];
+  var hist = (prev && prev.history) ? prev.history.slice()
+    : [{ role:'user', content:'Dame el informe de rendimiento de esta sesión.', synthetic:true }];
+  if (question) hist.push({ role:'user', content:question });
+
+  var draft = { history:hist };
+  box.innerHTML = renderActReportBox(draft, key, idx) +
+                  '<div class="ai-typing"><i></i><i></i><i></i></div>';
+  var btn = box.parentNode.querySelector('.btn-ai');
+  if (btn) btn.disabled = true;
+
+  fetch(MY_AI_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: question ? 600 : 900,
+      system: buildActivitySystemPrompt(a, d, key, !!question),
+      messages: buildActivityApiMessages(hist)
+    })
+  }).then(function(res){
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }).then(function(data){
+    var txt = '', i;
+    if (data && data.content && data.content.length) {
+      for (i = 0; i < data.content.length; i++) {
+        if (data.content[i].type === 'text') txt += data.content[i].text;
+      }
+    }
+    if (!txt && data && typeof data.response === 'string') txt = data.response;
+    if (!txt) throw new Error('Respuesta vacía');
+    hist.push({ role:'assistant', content:txt });
+    S.activityReports[rk] = { history:hist };
+    var b = findActReportBox(key, idx);
+    if (b) b.innerHTML = renderActReportBox(S.activityReports[rk], key, idx);
+    var nb = b && b.parentNode.querySelector('.btn-ai');
+    if (nb) { nb.disabled = false; nb.innerHTML = '&#129302; Actualizar informe de rendimiento'; }
+  }).catch(function(e){
+    // Si falla, se descarta la pregunta para no dejar el historial cojo.
+    if (question && hist.length && hist[hist.length - 1].role === 'user') hist.pop();
+    var b = findActReportBox(key, idx);
+    if (b) b.innerHTML = renderActReportBox(prev ? { history:hist } : null, key, idx) +
+      '<div>&#9888;&#65039; No pude generar el informe. Int&#233;ntalo de nuevo en unos segundos.</div>';
+    var nb = b && b.parentNode.querySelector('.btn-ai');
+    if (nb) nb.disabled = false;
+  });
+}
+
+function generateActivityReport(key, idx){
+  var got = getDayActivity(key, idx);
+  if (got.a && got.d) callActivityAI(got.a, got.d, key, idx, null);
+}
+
+function askActivityReport(key, idx){
+  var box = findActReportBox(key, idx);
+  var got = getDayActivity(key, idx);
+  if (!box || !got.a || !got.d) return;
+  var input = box.querySelector('.ai-ask-input');
+  var q = input ? input.value.replace(/^\s+|\s+$/g, '') : '';
+  if (!q) return;
+  if (!S.activityReports[actReportKey(got.a)]) {
+    box.innerHTML += '<div>Genera primero el informe de rendimiento.</div>';
+    return;
+  }
+  callActivityAI(got.a, got.d, key, idx, q);
 }
 
 /* ---------- 15. CHAT IA ---------- */
@@ -5399,6 +5835,49 @@ wire('cal-next', 'click', function(){
   S.selectedDay = null;
   var dd = $('day-detail'); if (dd) { dd.className = 'hidden'; dd.innerHTML = ''; }
   renderCalendar();
+});
+
+/* Informes de rendimiento: delegación porque el detalle se repinta al
+   cambiar de día. El contenedor .ai-report guarda el día y el índice. */
+function closestActReport(el){
+  while (el && el !== document) {
+    if (el.classList && el.classList.contains('ai-report')) return el;
+    el = el.parentNode;
+  }
+  return null;
+}
+wire('day-detail', 'click', function(e){
+  var el = e && e.target, reportBtn = null, askBtn = null, quickBtn = null;
+  while (el && el !== this) {
+    if (el.getAttribute) {
+      if (!reportBtn && el.getAttribute('data-act-report') !== null) reportBtn = el;
+      if (!askBtn && el.getAttribute('data-act-ask-send') !== null) askBtn = el;
+      if (!quickBtn && el.getAttribute('data-act-q') !== null) quickBtn = el;
+    }
+    el = el.parentNode;
+  }
+  if (reportBtn) {
+    generateActivityReport(reportBtn.getAttribute('data-day'),
+                           parseInt(reportBtn.getAttribute('data-act-report'), 10));
+    return;
+  }
+  if (askBtn || quickBtn) {
+    var box = closestActReport(askBtn || quickBtn);
+    if (!box) return;
+    var input = box.querySelector('.ai-ask-input');
+    if (quickBtn && input) input.value = quickBtn.getAttribute('data-act-q');
+    askActivityReport(box.getAttribute('data-day'),
+                      parseInt(box.getAttribute('data-act-report-out'), 10));
+  }
+});
+wire('day-detail', 'keydown', function(e){
+  if (!e || !((e.key === 'Enter') || e.keyCode === 13)) return;
+  var el = e.target;
+  if (!el || !el.classList || !el.classList.contains('ai-ask-input')) return;
+  e.preventDefault();
+  var box = closestActReport(el);
+  if (box) askActivityReport(box.getAttribute('data-day'),
+                             parseInt(box.getAttribute('data-act-report-out'), 10));
 });
 
 /* Rating rows (delegación en el padre) */
