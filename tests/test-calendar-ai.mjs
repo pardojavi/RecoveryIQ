@@ -107,6 +107,11 @@ const text = detail.textContent;
 ok(text.indexOf('Rodaje con series') >= 0, 'muestra el nombre de la sesión');
 ok(text.indexOf('Potencia media') >= 0 && text.indexOf('245 W') >= 0, 'vatios medios');
 ok(text.indexOf('Potencia normalizada') >= 0 && text.indexOf('258 W') >= 0, 'vatios normalizados');
+const topRows = [...detail.children]
+  .filter(e => e && e.classList && e.classList.contains('dd-row'))
+  .map(e => e.textContent);
+ok(topRows.some(t => t.indexOf('Potencia normalizada') >= 0 && t.indexOf('258 W') >= 0),
+   'la normalizada aparece también con los datos del día, fuera del desplegable');
 ok(text.indexOf('Watios / kg') >= 0, 'vatios por kilo');
 ok(text.indexOf('FC media') >= 0 && text.indexOf('148 bpm') >= 0, 'pulso medio');
 ok(text.indexOf('88 rpm') >= 0, 'cadencia');
@@ -266,6 +271,12 @@ eq(run('actPerf({norm_power:222}).powerNp'), 222,
    'normalizada de Intervals.icu (norm_power)');
 eq(run('actPerf({icu_weighted_avg_watts:231}).powerNp'), 231,
    'normalizada como icu_weighted_avg_watts');
+eq(run('actPerf({weighted_average_watts:249}).powerNp'), 249,
+   'normalizada como weighted_average_watts');
+eq(run('actPerf({icu_intensity:0.95, icu_ftp:280}).powerNp'), 266,
+   'normalizada derivada de IF × FTP cuando la fuente no la da');
+eq(run('actPerf({average_watts:201}).powerAvg'), 201,
+   'potencia media de Intervals.icu (average_watts)');
 eq(run(`(function(){
   var a = S.data.activities[0], old = a.ftp;
   a.ftp = 270;
@@ -314,6 +325,14 @@ const gpeak = run(`(function(){
   return actPerf(a[0]).peaks[480];
 })()`);
 eq(gpeak, 318, 'Garmin: pico de 8 minutos normalizado');
+const gnp = run(`(function(){
+  var a = garminActivities({activities:[{
+    activityId:102, activityName:'Ciclismo', startTimeLocal: todayKey()+' 10:00:00',
+    activityType:{typeKey:'cycling'}, avgPower:230, intensityFactor:0.96, ftp:250
+  }]});
+  return actPerf(a[0]).powerNp;
+})()`);
+eq(gnp, 240, 'Garmin: NP derivada de intensityFactor × FTP');
 
 console.log('\n== Errores JS ==');
 ok(!$('js-err') || !$('js-err').classList.contains('show'), 'ningún error JS',

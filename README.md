@@ -464,15 +464,19 @@ conectar con la otra. Ajustes muestra siempre cuál está activa.
 
 #### Actividades e informe de rendimiento en el Calendario
 
-Al pulsar un día con datos aparece, junto al resto de métricas, un
-**desplegable «Actividades de este día»**. En el resumen de cada sesión se ve
-ya la duración, la carga y la **potencia normalizada** (por ejemplo, «258 W NP»);
-al desplegarla aparece todo lo que la fuente trae: potencia media / normalizada /
-máxima, **picos de 1 min, 5 min, 8 min, 10 min, 20 min y 1 hora**, vatios por
-kilo (si hay peso), FC media y máxima, cadencia, velocidad, distancia,
-desnivel, calorías y carga (TSS). Intervals.icu y Garmin usan nombres distintos
-para estos campos y la app los normaliza; las duraciones de Garmin, que vienen
-en milisegundos, se convierten a segundos.
+Al pulsar un día con datos aparece, junto al resto de métricas, una fila
+**«Potencia normalizada»** con los vatios de las sesiones de ese día (por
+ejemplo, «258 W») y un **desplegable «Actividades de este día»**. En el resumen
+de cada sesión se ve ya la duración, la carga y la **potencia normalizada**
+(«258 W NP»); al desplegarla aparece todo lo que la fuente trae: potencia media /
+normalizada / máxima, **picos de 1 min, 5 min, 8 min, 10 min, 20 min y 1 hora**,
+vatios por kilo (si hay peso), FC media y máxima, cadencia, velocidad,
+distancia, desnivel, calorías y carga (TSS). Intervals.icu y Garmin usan nombres
+distintos (`normalized_power`, `icu_weighted_avg_watts`,
+`weighted_average_watts`, `intensityFactor`…) y la app los normaliza; si la
+fuente no da la normalizada pero sí el factor de intensidad y el FTP, la calcula
+como IF × FTP. Las duraciones de Garmin, que vienen en milisegundos, se
+convierten a segundos.
 
 En Intervals.icu los picos no vienen en el listado de sesiones: la app pide
 `/api/v1/activity/{id}/power-curve` para las sesiones de ciclismo con potencia
@@ -720,7 +724,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 ## 9. Verificación
 
 Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
-(**680 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+(**685 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
 `tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
@@ -803,12 +807,14 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
 
-### `test-calendar-ai.mjs` — 102 aserciones
+### `test-calendar-ai.mjs` — 107 aserciones
 
 - Semana del calendario de lunes a domingo (rótulos y casillas vacías iniciales).
 - Desplegable del día con 2 sesiones: nombre personalizado, potencia media,
-  normalizada (también en el resumen plegado), los seis picos (1 m, 5 m, 8 m,
-  10 m, 20 m y 1 h) y por kilo, FC, cadencia, distancia, desnivel y carga.
+  normalizada (en la fila del día, en el resumen plegado y al desplegar),
+  los seis picos (1 m, 5 m, 8 m, 10 m, 20 m y 1 h) y por kilo, FC, cadencia,
+  distancia, desnivel y carga. La normalizada se reconoce con varios nombres y
+  se deriva de IF × FTP si la fuente solo da esos dos datos.
 - Payload del informe: POST a `/ai`, 1100 tokens, prompt en texto plano con
   vatios, picos, media habitual de ciclismo, HRV, FC nocturna, FC mínima,
   estado de recuperación, sueño, peso y W/kg.

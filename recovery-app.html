@@ -2076,14 +2076,40 @@ function actPeaks(a){
   return out;
 }
 
+/* La potencia normalizada llega con muchos nombres según la fuente. Si no
+   viene explicita, se deriva de IF × FTP (Coggan): es la definición misma
+   del factor de intensidad, así que no es una estimación nueva. */
+function activityNP(a){
+  if (!a) return null;
+  var v = numOr(a.normalized_power, a.normalizedPower, a.normalizedPowerWatts,
+                a.np_power, a.npPower, a.np, a.norm_power, a.normPower,
+                a.weighted_average_watts, a.weightedAveragePower,
+                a.icu_weighted_avg_watts, a.icuWeightedAvgWatts);
+  if (v !== null) return v;
+  /* Garmin puede traer el detalle de la sesión con summaryDTO anidado. */
+  var s = a.summaryDTO || a.summary || null;
+  if (s) {
+    v = numOr(s.normalizedPower, s.normPower, s.normalized_power,
+              s.weightedAveragePower, s.weighted_average_watts);
+    if (v !== null) return v;
+  }
+  var iff = numOr(a.icu_intensity, a.intensityFactor, a.intensity_factor);
+  var ftp = numOr(a.icu_ftp, a.ftp, a.functionalThresholdPower, a.maxFtp, a.thresholdPower);
+  if (iff !== null && ftp !== null) {
+    if (iff > 1.5) iff = iff / 100;  /* algunas fuentes lo dan en porcentaje */
+    return Math.round(iff * ftp);
+  }
+  return null;
+}
+
 /* Métricas de rendimiento normalizadas (vatios, FC, cadencia…). */
 function actPerf(a){
   if (!a) return null;
   return {
-    powerAvg:  numOr(a.avg_power, a.average_power, a.avgPower, a.averagePower),
-    powerNp:   numOr(a.normalized_power, a.normalizedPower, a.np_power, a.npPower,
-                     a.norm_power, a.icu_weighted_avg_watts),
-    powerMax:  numOr(a.max_power, a.maxPower),
+    powerAvg:  numOr(a.avg_power, a.average_power, a.average_watts, a.icu_average_watts,
+                     a.avgPower, a.averagePower, a.avgWatts, a.averageWatts),
+    powerNp:   activityNP(a),
+    powerMax:  numOr(a.max_power, a.max_watts, a.icu_max_watts, a.maxPower, a.maxWatts),
     hrAvg:     numOr(a.average_heartrate, a.avg_hr, a.averageHR, a.averageHr, a.avgHeartRate),
     hrMax:     numOr(a.max_heartrate, a.max_hr, a.maxHR, a.maxHeartRate),
     hrMaxAthlete: numOr(a.athlete_max_hr, a.athleteMaxHr, a.hrMaxAthlete),
@@ -3516,7 +3542,8 @@ function garminActivities(g){
       average_heartrate: a.averageHR || a.averageHr || null,
       max_heartrate:     a.maxHR || a.maxHeartRate || null,
       avg_power:         a.avgPower || a.averagePower || null,
-      normalized_power:  a.normalizedPower || a.npPower || a.icuWeightedAvgWatts || null,
+      normalized_power:  a.normalizedPower || a.npPower || a.normPower ||
+                         a.weightedAveragePower || a.icuWeightedAvgWatts || null,
       max_power:         a.maxPower || null,
       peak_power_1m:     a.peakPower1m || a.peakPower1min || a.maxPower1min || null,
       peak_power_5m:     a.peakPower5m || a.peakPower5min || a.maxPower5min || null,
@@ -3524,7 +3551,8 @@ function garminActivities(g){
       peak_power_10m:    a.peakPower10m || a.peakPower10min || a.maxPower10min || null,
       peak_power_20m:    a.peakPower20m || a.peakPower20min || a.maxPower20min || null,
       peak_power_1h:     a.peakPower1h || a.peakPower1hour || a.maxPower1hour || null,
-      ftp:               a.ftp || a.functionalThresholdPower || null,
+      ftp:               a.ftp || a.functionalThresholdPower || a.maxFtp || null,
+      icu_intensity:     a.intensityFactor || a.icu_intensity || null,
       cp:                a.criticalPower || null,
       athlete_max_hr:    a.athleteMaxHeartRate || null,
       powerCurve:        a.powerCurve || a.power_curve || null,
@@ -4828,6 +4856,19 @@ function showDayDetail(key){
     html += row('CTL', d.ctl);
     html += row('ATL', d.atl);
     html += row('TSB', (d.tsb > 0 ? '+' : '') + d.tsb, d.tsb < -10 ? '#f87171' : (d.tsb > 5 ? '#22d3a0' : null));
+    /* La normalizada también se muestra con las métricas del día, no solo
+       dentro del desplegable de actividades. */
+    if (d.acts && d.acts.length) {
+      var npParts = [];
+      for (var ni = 0; ni < d.acts.length; ni++) {
+        var npm = actPerf(d.acts[ni]);
+        if (npm && npm.powerNp) {
+          npParts.push(Math.round(npm.powerNp) + ' W' +
+            (d.acts.length > 1 ? ' (' + actInfo(d.acts[ni]).name + ')' : ''));
+        }
+      }
+      if (npParts.length) html += row('Potencia normalizada', npParts.join(' · '), '#a78bfa');
+    }
   } else {
     html += '<div class="empty-note">Sin datos de ' +
             (S.source === 'garmin' ? 'Garmin' : 'Intervals.icu') + ' para este d&#237;a.</div>';
