@@ -465,13 +465,14 @@ conectar con la otra. Ajustes muestra siempre cuál está activa.
 #### Actividades e informe de rendimiento en el Calendario
 
 Al pulsar un día con datos aparece, junto al resto de métricas, un
-**desplegable «Actividades de este día»**. Cada sesión puede desplegarse a su vez
-y muestra todo lo que la fuente trae: potencia media / normalizada / máxima,
-**picos de 1 min, 5 min, 8 min, 10 min, 20 min y 1 hora**, vatios por kilo
-(si hay peso), FC media y máxima, cadencia, velocidad, distancia, desnivel,
-calorías y carga (TSS). Intervals.icu y Garmin usan nombres distintos para
-estos campos y la app los normaliza; las duraciones de Garmin, que vienen en
-milisegundos, se convierten a segundos.
+**desplegable «Actividades de este día»**. En el resumen de cada sesión se ve
+ya la duración, la carga y la **potencia normalizada** (por ejemplo, «258 W NP»);
+al desplegarla aparece todo lo que la fuente trae: potencia media / normalizada /
+máxima, **picos de 1 min, 5 min, 8 min, 10 min, 20 min y 1 hora**, vatios por
+kilo (si hay peso), FC media y máxima, cadencia, velocidad, distancia,
+desnivel, calorías y carga (TSS). Intervals.icu y Garmin usan nombres distintos
+para estos campos y la app los normaliza; las duraciones de Garmin, que vienen
+en milisegundos, se convierten a segundos.
 
 En Intervals.icu los picos no vienen en el listado de sesiones: la app pide
 `/api/v1/activity/{id}/power-curve` para las sesiones de ciclismo con potencia
@@ -484,25 +485,33 @@ El calendario va de **lunes a domingo**; el detalle de cada día se sigue
 abriendo igual al tocar una casilla con datos.
 
 El botón **🤖 Informe de rendimiento** genera un análisis con la IA (la ruta
-`/ai` del worker, la misma que usa el chat). El prompt cruza la sesión con:
+`/ai` del worker, la misma que usa el chat). El veredicto ya no es una opinión
+genérica: se apoya en criterios de fisiología del ejercicio y se pide a la IA
+que cite el marco correspondiente:
 
-- la **media de potencia de tus propias sesiones de ciclismo** (para decir
-  explícitamente si los vatios han sido buenos, normales o malos),
-- los **picos de 1 min a 1 hora**, para distinguir un esfuerzo sostenido de un
-  pico puntual,
-- el **peso** y los **W/kg**,
-- la **FC media/máxima** frente a la **FC nocturna o de reposo**, la **FC
-  mínima** y el TSS,
-- la **HRV de ese día frente a tu base**, las **horas de sueño y sus fases**,
-  el peso y la **temperatura de la muñeca** si están disponibles,
-- el CTL/ATL/TSB, el índice y el **estado de recuperación** de ese día.
+- **Potencia normalizada y TSS (Coggan)**: se calculan el factor de intensidad
+  (IF = NP/umbral), el TSS esperado (IF² × horas × 100) y el índice de
+  variabilidad (NP/potencia media) para juzgar el ritmo.
+- **Potencia crítica y W′ (Monod y Scherrer)**: los picos de 1 min a 1 h se
+  comparan con el umbral; cuando la fuente no da FTP/CP, la app lo estima con
+  el convenio de 20 min (95 % del mejor esfuerzo de 20 min reciente) y se lo
+  indica a la IA para que matice la conclusión.
+- **Eficiencia**: factor NP/FC media comparado con las demás sesiones, con el
+  % de FC máxima si se conoce, para distinguir potencia barata de costosa.
+- **Recuperación con evidencia**: HRV solo frente a la base individual, sueño
+  frente al rango recomendado de 7–9 h y sus fases, FC nocturna/mínima,
+  temperatura, balance de carga de Banister (TSB) y ratio agudo/crónico
+  ATL/CTL como orientación (0,8–1,3; por encima de 1,5, mayor riesgo según la
+  literatura sobre ACWR).
 
-El resultado se guarda durante la sesión: sigue visible al cambiar de mes o de
-pestaña. Debajo del informe hay preguntas rápidas («¿Dónde puedo mejorar?»,
-«¿Por qué he rendido así?», «¿Qué papel ha jugado mi sueño?») y un campo para
-escribir cualquier otra; el hilo de preguntas y respuestas se envía como
-contexto en las siguientes llamadas. Si faltan datos (por ejemplo, potencia en
-una carrera), la IA lo indica en vez de inventarlos.
+También se cruzan el **peso y los W/kg**, la media de potencia de tus propias
+sesiones y el **estado de recuperación** del día. El resultado se guarda durante
+la sesión: sigue visible al cambiar de mes o de pestaña. Debajo del informe hay
+preguntas rápidas («¿Dónde puedo mejorar?», «¿Por qué he rendido así?», «¿Qué
+papel ha jugado mi sueño?») y un campo para escribir cualquier otra; el hilo de
+preguntas y respuestas se envía como contexto en las siguientes llamadas y
+mantiene los mismos criterios. Si faltan datos (por ejemplo, potencia en una
+carrera), la IA lo indica en vez de inventarlos.
 
 #### Detalle del sueño
 
@@ -711,7 +720,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 ## 9. Verificación
 
 Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
-(**663 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+(**679 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
 `tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
@@ -794,15 +803,18 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
 
-### `test-calendar-ai.mjs` — 85 aserciones
+### `test-calendar-ai.mjs` — 101 aserciones
 
 - Semana del calendario de lunes a domingo (rótulos y casillas vacías iniciales).
 - Desplegable del día con 2 sesiones: nombre personalizado, potencia media,
-  normalizada, los seis picos (1 m, 5 m, 8 m, 10 m, 20 m y 1 h) y por kilo,
-  FC, cadencia, distancia, desnivel y carga.
-- Payload del informe: POST a `/ai`, 900 tokens, prompt en texto plano con
+  normalizada (también en el resumen plegado), los seis picos (1 m, 5 m, 8 m,
+  10 m, 20 m y 1 h) y por kilo, FC, cadencia, distancia, desnivel y carga.
+- Payload del informe: POST a `/ai`, 1100 tokens, prompt en texto plano con
   vatios, picos, media habitual de ciclismo, HRV, FC nocturna, FC mínima,
   estado de recuperación, sueño, peso y W/kg.
+- Criterios científicos: umbral estimado desde el mejor 20 min, IF, TSS de
+  Coggan, índice de variabilidad, eficiencia NP/FC, CP/W′ de Monod y Scherrer,
+  Banister, ACWR, rango de sueño 7–9 h y ratio ATL/CTL.
 - Informe pintado, caché en `S.activityReports`, preguntas rápidas, campo libre
   y tecla Enter: segunda llamada con 600 tokens, prompt en modo pregunta y el
   informe anterior como contexto. El hilo sobrevive a repintar el calendario.

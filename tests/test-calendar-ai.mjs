@@ -101,6 +101,8 @@ ok(!!drop, 'aparece el desplegable de actividades');
 ok(drop && drop.textContent.indexOf('Actividades de este d') >= 0, 'el título indica cuántas hay');
 const items = detail.querySelectorAll('.act-item');
 eq(items.length, 2, 'una entrada por actividad');
+ok(items[0].querySelector('summary').textContent.indexOf('258 W NP') >= 0,
+   'la potencia normalizada se ve también sin desplegar la sesión');
 const text = detail.textContent;
 ok(text.indexOf('Rodaje con series') >= 0, 'muestra el nombre de la sesión');
 ok(text.indexOf('Potencia media') >= 0 && text.indexOf('245 W') >= 0, 'vatios medios');
@@ -128,10 +130,10 @@ eq(aiCalls.length, 1, 'se ha llamado al proxy de IA');
 const call = aiCalls[0];
 ok(call.url.indexOf('/ai') >= 0, 'usa el proxy /ai');
 eq(call.opts.method, 'POST', 'petición POST');
-eq(call.body.max_tokens, 900, 'informe completo con más tokens');
+eq(call.body.max_tokens, 1100, 'informe completo con más tokens');
 const sys = call.body.system;
-ok(sys.indexOf('VATIOS') >= 0, 'pide valorar los vatios');
-ok(sys.indexOf('DÓNDE MEJORAR') >= 0, 'pide dónde mejorar');
+ok(sys.indexOf('POTENCIA CON CRITERIOS CONTRASTADOS') >= 0, 'pide valorar los vatios');
+ok(sys.indexOf('CÓMO MEJORAR') >= 0, 'pide dónde mejorar');
 ok(sys.indexOf('245 W') >= 0, 'incluye la potencia media de la sesión');
 ok(sys.indexOf('258 W') >= 0, 'incluye la potencia normalizada');
 ok(sys.indexOf('234 W') >= 0, 'incluye la media habitual de ciclismo (258 y 210 → 234)');
@@ -143,11 +145,34 @@ ok(sys.indexOf('Estado de recuperación') >= 0, 'incluye el estado de recuperaci
 ok(sys.indexOf('Picos de potencia') >= 0, 'incluye los picos de potencia');
 ok(sys.indexOf('8 min: 310 W') >= 0 && sys.indexOf('1 h: 255 W') >= 0,
    'pasa todos los picos (8 min y 1 h)');
-ok(sys.indexOf('picos de 1 min, 5 min, 8 min, 10 min, 20 min y 1 hora') >= 0,
+ok(sys.indexOf('picos de 1, 5, 8, 10, 20 min y 1 h') >= 0,
    'el prompt pide analizar los picos');
 ok(sys.indexOf('Sueño') >= 0, 'incluye el sueño');
 ok(sys.indexOf('Peso registrado') >= 0, 'incluye el peso');
 ok(sys.indexOf('W/kg') >= 0, 'incluye vatios por kilo');
+
+console.log('\n== Criterios científicos en el análisis ==');
+ok(sys.indexOf('Umbral de potencia de referencia: 266 W') >= 0,
+   'calcula el umbral desde el mejor esfuerzo de 20 min (280 × 0,95)');
+ok(sys.indexOf('estimado: 95 % de tu mejor esfuerzo de 20 min') >= 0,
+   'advierte de que el umbral está estimado, no medido');
+ok(sys.indexOf('Factor de intensidad') >= 0 && sys.indexOf('IF = NP / umbral') >= 0,
+   'incluye el factor de intensidad (IF)');
+ok(sys.indexOf('IF² × horas × 100') >= 0, 'explica el TSS según Coggan');
+ok(sys.indexOf('Índice de variabilidad') >= 0 && sys.indexOf('1.05') >= 0,
+   'incluye el índice de variabilidad (NP/media)');
+ok(sys.indexOf('Factor de eficiencia') >= 0 && sys.indexOf('1.74 W/bpm') >= 0,
+   'incluye la eficiencia NP/FC media');
+ok(sys.indexOf('TSS registrado: 82') >= 0, 'contrasta el TSS estimado con el registrado');
+ok(sys.indexOf('Coggan') >= 0, 'cita el modelo NP/TSS de Coggan');
+ok(sys.indexOf('Monod y Scherrer') >= 0, 'cita el modelo CP/W′');
+ok(sys.indexOf('Banister') >= 0 && sys.indexOf('ACWR') >= 0,
+   'cita Banister y el ratio agudo/crónico');
+ok(sys.indexOf('7–9 horas') >= 0, 'usa el rango de sueño recomendado');
+ok(sys.indexOf('Ratio de carga aguda/crónica') >= 0 && sys.indexOf('1.06') >= 0,
+   'calcula el ratio ATL/CTL (72/68)');
+ok(sys.indexOf('Máximo 400 palabras') >= 0, 'informe más completo (400 palabras)');
+
 eq(call.body.messages[0].role, 'user', 'el historial empieza con usuario');
 ok(sys.indexOf('<') < 0, 'el system prompt es texto plano, sin HTML');
 
@@ -167,6 +192,8 @@ await wait(30);
 eq(aiCalls.length, 2, 'segunda llamada a la IA');
 eq(aiCalls[1].body.max_tokens, 600, 'la pregunta usa menos tokens');
 ok(aiCalls[1].body.system.indexOf('ÚLTIMA pregunta') >= 0, 'el prompt pasa a modo pregunta');
+ok(aiCalls[1].body.system.indexOf('Coggan') >= 0,
+   'la pregunta de seguimiento mantiene los criterios científicos');
 const msgs = aiCalls[1].body.messages;
 ok(msgs[msgs.length - 1].content.indexOf('Dónde puedo mejorar la potencia') >= 0,
    'la última pregunta llega como mensaje');
@@ -238,6 +265,13 @@ eq(run('actPerf({norm_power:222}).powerNp'), 222,
    'normalizada de Intervals.icu (norm_power)');
 eq(run('actPerf({icu_weighted_avg_watts:231}).powerNp'), 231,
    'normalizada como icu_weighted_avg_watts');
+eq(run(`(function(){
+  var a = S.data.activities[0], old = a.ftp;
+  a.ftp = 270;
+  var w = cyclingThreshold().w;
+  a.ftp = old;
+  return w;
+})()`), 270, 'un FTP declarado manda sobre la estimación');
 
 console.log('\n== Curvas se piden a Intervals.icu ==');
 run(`
