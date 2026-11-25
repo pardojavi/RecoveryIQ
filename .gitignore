@@ -16,3 +16,6 @@ proxy-ai-config.php
 
 # Dependencias (si algún día se añaden)
 node_modules/
+
+# Estado local de Cloudflare Wrangler (caché de cuenta, no se versiona)
+.wrangler/
