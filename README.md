@@ -495,7 +495,10 @@ que cite el marco correspondiente:
 
 - **Potencia normalizada y TSS (Coggan)**: se calculan el factor de intensidad
   (IF = NP/umbral), el TSS esperado (IF² × horas × 100) y el índice de
-  variabilidad (NP/potencia media) para juzgar el ritmo.
+  variabilidad (NP/potencia media) para juzgar el ritmo. Si el TSS esperado no
+  cuadra con el **TSS registrado por la fuente**, se deriva el IF y el FTP
+  implicados de ese TSS medido y se avisa a la IA de que priorice ese dato
+  frente a un umbral estimado que no encaja.
 - **Todos los picos, no solo las medias**: la IA recibe los mejores esfuerzos
   de **30 s, 1, 2, 5, 8, 10, 15, 20, 30 min, 1 y 2 h** (de los campos de la
   fuente o interpolados de la curva de potencia). Con ellos compara cada
@@ -736,7 +739,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 ## 9. Verificación
 
 Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
-(**694 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+(**697 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
 `tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
@@ -819,7 +822,7 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
 
-### `test-calendar-ai.mjs` — 116 aserciones
+### `test-calendar-ai.mjs` — 119 aserciones
 
 - Semana del calendario de lunes a domingo (rótulos y casillas vacías iniciales).
 - Desplegable del día con 2 sesiones: nombre personalizado, potencia media,
@@ -830,12 +833,13 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
 - Payload del informe: POST a `/ai`, 1300 tokens, prompt en seis partes con
   todos los picos (30 s–2 h), media habitual de ciclismo, CP/W′, FE y VO₂,
   tendencia de forma, HRV, FC nocturna, FC mínima, estado de recuperación,
-  sueño, peso y W/kg.
+  sueño, peso y W/kg. El veredicto prioriza el IF/FTP derivados del TSS
+  registrado cuando el umbral estimado no cuadra con el dato medido.
 - Criterios científicos: umbral estimado desde el mejor 20 min, IF, TSS e IV de
-  Coggan, CP/W′ de Monod y Scherrer ajustado por mínimos cuadrados, W′ gastada
-  en las series, VO₂ de Sitko et al., eficiencia frente a la propia media,
-  tendencia del mejor 20 min, Banister, Gabbett (ACWR), rango de sueño 7–9 h y
-  ratio ATL/CTL.
+  Coggan, aviso de coherencia TSS esperado vs registrado, CP/W′ de Monod y
+  Scherrer ajustado por mínimos cuadrados, W′ gastada en las series, VO₂ de
+  Sitko et al., eficiencia frente a la propia media, tendencia del mejor
+  20 min, Banister, Gabbett (ACWR), rango de sueño 7–9 h y ratio ATL/CTL.
 - Informe pintado, caché en `S.activityReports`, preguntas rápidas, campo libre
   y tecla Enter: segunda llamada con 600 tokens, prompt en modo pregunta y el
   informe anterior como contexto. El hilo sobrevive a repintar el calendario.

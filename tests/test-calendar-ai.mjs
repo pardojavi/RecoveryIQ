@@ -191,6 +191,13 @@ ok(sys.indexOf('W′ consumida estimada en el mejor 5 min: 20 kJ') >= 0,
 ok(sys.indexOf('Evolución de tu mejor 20 min: 280 W en los últimos 14 días frente a 250 W en los 14 días anteriores (+12 %, en mejora)') >= 0,
    'informa de la tendencia de forma');
 ok(sys.indexOf('TSS registrado: 82') >= 0, 'contrasta el TSS estimado con el registrado');
+ok(sys.indexOf('IF derivado del TSS registrado: 0.74') >= 0,
+   'deriva el IF del TSS real cuando el umbral no cuadra');
+ok(sys.indexOf('FTP que implica ese TSS: 349 W') >= 0,
+   'calcula el FTP implicado por el TSS registrado');
+ok(sys.indexOf('AVISO DE COHERENCIA') >= 0 &&
+   sys.indexOf('Prioriza el TSS registrado') >= 0,
+   'advierte de la incoherencia y prioriza el dato medido');
 ok(sys.indexOf('Coggan') >= 0, 'cita el modelo NP/TSS de Coggan');
 ok(sys.indexOf('Monod y Scherrer') >= 0, 'cita el modelo CP/W′');
 ok(sys.indexOf('Sitko') >= 0, 'cita la ecuación de VO₂ de Sitko et al.');

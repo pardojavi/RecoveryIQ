@@ -1970,6 +1970,15 @@ function dayLoad(list){
   return Math.round(s);
 }
 
+/* TSS realmente declarado por la fuente (distinto del estimado por duración
+   y deporte que usa actLoad como respaldo). Solo con este dato tiene sentido
+   derivar el IF y el FTP implicados. */
+function declaredLoad(a){
+  var tl = parseFloat(a && (a.icu_training_load || a.trainingLoad || a.tss ||
+                            a.activityTrainingLoad || a.load));
+  return (isFinite(tl) && tl > 0) ? Math.min(400, Math.round(tl)) : null;
+}
+
 function actInfo(a){
   var key  = sportKey(a);
   var sp   = SPORT_INFO[key] || SPORT_INFO.otro;
@@ -5490,11 +5499,24 @@ function activityContextText(a, d, key){
   }
   if (th && m.powerNp) {
     var ifac = m.powerNp / th.w;
+    var expectedTss = info.mins ? Math.round(ifac * ifac * (info.mins / 60) * 100) : null;
+    var tssReal = declaredLoad(a);
     L.push('Factor de intensidad (IF = NP / umbral): ' + round2(ifac) +
            '. Según Coggan, TSS esperado = IF² × horas × 100' +
-           (info.mins ? ' = ' + Math.round(ifac * ifac * (info.mins / 60) * 100) +
-                        ' para ' + info.mins + ' min' : '') +
+           (expectedTss !== null ? ' = ' + expectedTss + ' para ' + info.mins + ' min' : '') +
            (m.load ? '; TSS registrado: ' + m.load : '') + '.');
+    if (tssReal && info.mins > 0) {
+      var ifTss = Math.sqrt(tssReal / ((info.mins / 60) * 100));
+      var ftpTss = Math.round(m.powerNp / ifTss);
+      L.push('IF derivado del TSS registrado: ' + round2(ifTss) +
+             '; FTP que implica ese TSS: ' + ftpTss + ' W.');
+      if (expectedTss !== null && Math.abs(expectedTss - tssReal) / tssReal > 0.25) {
+        L.push('AVISO DE COHERENCIA: el TSS esperado con el umbral de referencia (' +
+               expectedTss + ') no coincide con el registrado (' + tssReal +
+               '). Prioriza el TSS registrado y el IF/FTP derivados de él; el umbral ' +
+               'estimado puede ser bajo. No califiques la sesión de "muy dura" solo por ese umbral.');
+      }
+    }
   }
   var series = seriesProfile(m, pm ? pm.cp : null);
   if (series) L.push(series);
@@ -5581,14 +5603,19 @@ function buildActivitySystemPrompt(a, d, key, followUp){
            'Responde siempre en español, en texto plano (sin markdown, sin asteriscos, sin tablas) y de forma concisa.\n' +
            'Genera un INFORME DE RENDIMIENTO con estas seis partes, cada una en su párrafo:\n' +
            '1) VEREDICTO: di claramente si ha rendido bien, normal o mal, y justifícalo con números: ' +
-           'IF (NP/umbral), NP y media frente al FTP/CP, vatios por kilo, picos y comparación con ' +
-           'su media de ciclismo. No des una opinión genérica sin apoyarla en los datos.\n' +
+           'IF, NP y media frente al FTP/CP, vatios por kilo, picos, TSS registrado y comparación ' +
+           'con su media de ciclismo. Si hay un IF derivado del TSS registrado, úsalo para el ' +
+           'veredicto antes que el IF calculado con un umbral estimado. No des una opinión genérica ' +
+           'sin apoyarla en los datos.\n' +
            '2) POTENCIA Y TODOS LOS PICOS: aplica el modelo NP/TSS de Coggan (IF = NP/FTP, ' +
            'TSS = IF² × horas × 100, IV = NP/media) y el modelo CP/W′ de Monod y Scherrer. ' +
            'Comenta TODOS los picos disponibles (30 s, 1, 2, 5, 8, 10, 15, 20, 30 min, 1 y 2 h), ' +
            'no solo la media: qué duraciones destacan frente al FTP/CP, cuánta W′ se gastó y ' +
            'si el perfil es de series/intervalos o continuo. Si hizo series, valora si estuvieron ' +
            'bien dosificadas y si se sostuvieron. Si el umbral es estimado, dilo y matiza. ' +
+           'Si aparece un AVISO DE COHERENCIA entre el TSS esperado y el registrado, prioriza el ' +
+           'TSS registrado y su IF/FTP implicados: no concluyas que la sesión fue muy dura apoyándote ' +
+           'solo en un umbral estimado que no cuadra. ' +
            'Di explícitamente si los vatios han sido buenos, normales o malos. Si no hay potencia, no la inventes.\n' +
            '3) EFICIENCIA Y VO₂: usa el factor de eficiencia (FE = NP/FC media) comparado con su ' +
            'FE habitual de otras sesiones, el % de FC máxima, el TSS y el VO₂max estimado con la ' +
