@@ -478,12 +478,27 @@ fuente no da la normalizada pero sí el factor de intensidad y el FTP, la calcul
 como IF × FTP. Las duraciones de Garmin, que vienen en milisegundos, se
 convierten a segundos.
 
-En Intervals.icu los picos no vienen en el listado de sesiones: la app pide
-`/api/v1/activity/{id}/power-curve` para las sesiones de ciclismo con potencia
-y lee ahí los mejores esfuerzos medios (con interpolación si falta el punto
-exacto). Si la sesión fue más corta que la duración pedida, simplemente no se
-muestra ese pico. Es una petición opcional: si falla, el resto de los datos
-sigue cargando igual.
+En Intervals.icu el listado de sesiones trae solo un resumen: los picos, los
+intervalos y varias métricas calculadas no vienen ahí. Para cada sesión de
+ciclismo con potencia (máximo 12) la app pide, de forma secuencial:
+
+- `/api/v1/activity/{id}?intervals=true` — detalle completo: todos los campos
+  de la fuente (FTP/CP/W′, IF, IV, eficiencia, desacople, julios por encima de
+  FTP, agotamiento de W′…) y los **intervalos marcados**. Los valores ya
+  medidos por la fuente mandan sobre los calculados por la app; si el detalle
+  trae un campo a `null`, se conserva el valor del listado.
+- `/api/v1/activity/{id}/power-curve` — curva completa de mejores esfuerzos
+  medios (con interpolación si falta el punto exacto) y sus extras
+  (`vo2max_5m`, `compound_score_5m`, modelos de potencia). Si la sesión fue más
+  corta que la duración pedida, ese pico simplemente no se muestra.
+- `/api/v1/activity/{id}/best-efforts?stream=watts&duration=60|300|1200&count=6`
+  — los **6 mejores esfuerzos repetidos** de 1, 5 y 20 min con su posición de
+  inicio y fin. El primero es el pico y los siguientes delatan si hubo series.
+
+Cada petición es independiente: si una falla, las demás se conservan y el resto
+de los datos sigue cargando igual. Con Garmin no hacen falta peticiones extra:
+el mismo mapeo `garminActivities()` lee también `summaryDTO`, los picos de
+30 s a 2 h, `bestEfforts`, los intervalos y las métricas declaradas.
 
 El calendario va de **lunes a domingo**; el detalle de cada día se sigue
 abriendo igual al tocar una casilla con datos.
@@ -504,6 +519,10 @@ que cite el marco correspondiente:
   fuente o interpolados de la curva de potencia). Con ellos compara cada
   duración frente al umbral, detecta si hubo **series/intervalos** (picos
   cortos muy por encima del esfuerzo de 20 min) y estima la **W′ gastada**.
+   Además recibe los **intervalos marcados** y los **mejores esfuerzos
+   repetidos**, para decir cuántos esfuerzos hubo, a qué vatios y si se
+   sostuvieron; si la fuente declara IF, IV, FE, desacople o julios sobre FTP,
+   usa esos valores medidos antes que los calculados aquí.
 - **Potencia crítica y W′ (Monod y Scherrer)**: se ajusta el modelo
   trabajo = CP·t + W′ por mínimos cuadrados sobre los mejores esfuerzos
   recientes de 2–30 min. Cuando la fuente no da FTP/CP, se calcula además el
@@ -739,7 +758,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 ## 9. Verificación
 
 Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
-(**697 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+(**713 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
 `tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
@@ -822,7 +841,7 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
 
-### `test-calendar-ai.mjs` — 119 aserciones
+### `test-calendar-ai.mjs` — 135 aserciones
 
 - Semana del calendario de lunes a domingo (rótulos y casillas vacías iniciales).
 - Desplegable del día con 2 sesiones: nombre personalizado, potencia media,
@@ -847,6 +866,11 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   IA (30 s–2 h), seis de ellos pintados en el desplegable, petición opcional a
   `/activity/{id}/power-curve` solo para ciclismo con vatios y normalización de
   los campos de Garmin.
+- Detalle completo: 15 peticiones para 3 sesiones (detalle con intervalos,
+  curva y 3 consultas de `best-efforts` por sesión), fusión sin sobrescribir los
+  valores medidos del listado, conservación de intervalos marcados y esfuerzos
+  repetidos, y paso al contexto/prompt de IF, IV, FE, desacople, julios sobre
+  FTP, agotamiento de W′, CP/W′ declarados, `vo2max_5m` y `compound_score_5m`.
 - Normalización de la FC mínima (Intervals.icu y Garmin) y de la potencia
   normalizada (`norm_power`, `icu_weighted_avg_watts`).
 - Las cuatro suites leen el HTML desde la carpeta del proyecto mediante

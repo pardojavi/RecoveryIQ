@@ -315,27 +315,92 @@ eq(run(`(function(){
   return w;
 })()`), 270, 'un FTP declarado manda sobre la estimación');
 
-console.log('\n== Curvas se piden a Intervals.icu ==');
+console.log('\n== Detalle completo se pide a Intervals.icu ==');
 run(`
-  window.__curveUrls = [];
+  window.__detailUrls = [];
   window.__origApiFetch = apiFetch;
   apiFetch = function(url){
-    window.__curveUrls.push(url);
-    return Promise.resolve({secs:[60,300,480,600,1200,3600],
-                            watts:[390,315,295,285,265,235]});
+    window.__detailUrls.push(url);
+    var m = /duration=(\\d+)/.exec(url);
+    if (m) {
+      var d = +m[1], top = d === 60 ? 420 : (d === 300 ? 340 : 290);
+      return Promise.resolve({efforts:[
+        {duration:d, average:top, start_index:600, end_index:600+d},
+        {duration:d, average:top-25, start_index:1200, end_index:1200+d}
+      ]});
+    }
+    if (url.indexOf('intervals=true') >= 0) {
+      return Promise.resolve({
+        id:'detalle', icu_pm_cp:265, icu_pm_w_prime:21000,
+        icu_intensity:0.96, icu_variability_index:1.09,
+        icu_efficiency_factor:1.72, decoupling:4.8,
+        icu_joules_above_ftp:14500, icu_max_wbal_depletion:19000,
+        icu_intervals:[
+          {start_index:600, end_index:900, average_watts:330},
+          {start_index:1200, end_index:1500, average_watts:325}
+        ]
+      });
+    }
+    return Promise.resolve({
+      secs:[60,300,480,600,1200,3600],
+      watts:[390,315,295,285,265,235],
+      vo2max_5m:58.4, compound_score_5m:71.2
+    });
   };
   fetchPeakPowers(S.data, 'Basic prueba').then(function(){ window.__curveDone = true; });
 `);
 await wait(30);
-const curveUrls = run('window.__curveUrls');
-eq(run('window.__curveDone'), true, 'termina la carga de curvas');
-ok(curveUrls.length === 3, 'pide una curva por sesión de ciclismo (3)', curveUrls.length);
+const detailUrls = run('window.__detailUrls');
+eq(run('window.__curveDone'), true, 'termina la carga del detalle');
+eq(detailUrls.length, 15, '3 sesiones × (detalle + curva + 3 best efforts)', detailUrls.length);
+const curveUrls = detailUrls.filter(u => u.indexOf('/power-curve') >= 0);
+const bestUrls = detailUrls.filter(u => u.indexOf('/best-efforts') >= 0);
+const fullUrls = detailUrls.filter(u => u.indexOf('intervals=true') >= 0);
+eq(curveUrls.length, 3, 'pide una curva por sesión de ciclismo (3)');
+eq(fullUrls.length, 3, 'pide el detalle completo por sesión de ciclismo (3)');
+eq(bestUrls.length, 9, 'pide best efforts de 1, 5 y 20 min en cada sesión (9)');
+ok(fullUrls[0].indexOf('/activity/ride-hoy?intervals=true') >= 0,
+   'el detalle usa el endpoint de la actividad con intervalos', fullUrls[0]);
+ok(bestUrls[0].indexOf('/best-efforts?stream=watts&duration=60&count=6') >= 0,
+   'los best efforts piden 6 esfuerzos de 1 min', bestUrls[0]);
 ok(curveUrls[0].indexOf('/activity/ride-hoy/power-curve') >= 0,
    'usa el endpoint de potencia de la actividad');
 eq(run('actPerf(S.data.activities[1]).peaks[300]'), 315,
    'la curva descargada se usa en el desplegable y en la IA');
+eq(run('actPerf(S.data.activities[0]).bestEfforts[60][0].avg'), 420,
+   'se guardan los esfuerzos repetidos de la fuente');
+eq(run('S.data.activities[0].icu_pm_cp'), 265, 'se conserva el CP declarado del detalle');
+eq(run('S.data.activities[0].intervalDetail.length'), 2, 'se conservan los intervalos marcados');
 ok(!run('actPerf(S.data.dailyMap[window.__tk].acts[1]).peaks[480]'),
    'la caminata no recibe picos de potencia');
+
+const fullCtx = run(`activityContextText(
+  S.data.activities[0], S.data.dailyMap[window.__tk], 'detalle')`);
+ok(fullCtx.indexOf('Detalle completo de la actividad (datos de la fuente)') >= 0,
+   'el informe recibe el detalle completo');
+ok(fullCtx.indexOf('IF declarado por la fuente: 0.96') >= 0 &&
+   fullCtx.indexOf('IV declarado por la fuente: 1.09') >= 0 &&
+   fullCtx.indexOf('FE declarado por la fuente: 1.72 W/bpm') >= 0,
+   'pasa IF, IV y FE medidos por la fuente');
+ok(fullCtx.indexOf('Desacople declarado: 4.8 %') >= 0 &&
+   fullCtx.indexOf('Julios por encima de FTP: 14500 J') >= 0 &&
+   fullCtx.indexOf('Agotamiento máximo de W′: 19000 J') >= 0,
+   'pasa desacople, julios sobre FTP y agotamiento de W′');
+ok(fullCtx.indexOf('CP declarado: 265 W') >= 0 && fullCtx.indexOf('W′ declarada: 21000 J') >= 0,
+   'pasa el CP y la W′ declarados');
+ok(fullCtx.indexOf('Intervalos marcados en la sesión: 2') >= 0 &&
+   fullCtx.indexOf('300 s a 330 W') >= 0,
+   'pasa los intervalos marcados con su potencia');
+ok(fullCtx.indexOf('Mejores esfuerzos repetidos (best efforts): 1 min: 2 esfuerzos [420 W, 395 W]') >= 0,
+   'pasa los esfuerzos repetidos para detectar series');
+ok(fullCtx.indexOf('VO₂max 5 min según la fuente: 58.4 ml/kg/min') >= 0 &&
+   fullCtx.indexOf('Compound score 5 min según la fuente: 71.2') >= 0,
+   'pasa los extras calculados por Intervals.icu en la curva');
+const fullPrompt = run(`buildActivitySystemPrompt(
+  S.data.activities[0], S.data.dailyMap[window.__tk], 'detalle')`);
+ok(fullPrompt.indexOf('INTERVALOS marcados') >= 0 &&
+   fullPrompt.indexOf('MEJORES ESFUERZOS REPETIDOS') >= 0,
+   'el prompt usa intervalos y esfuerzos repetidos para juzgar las series');
 run('apiFetch = window.__origApiFetch');
 
 console.log('\n== Pulso mínimo y picos de Garmin ==');

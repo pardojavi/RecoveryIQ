@@ -2018,6 +2018,86 @@ var PEAK_LONG  = { 30:'30sec', 60:'1min', 120:'2min', 300:'5min', 480:'8min',
                    600:'10min', 900:'15min', 1200:'20min', 1800:'30min',
                    3600:'1hour', 7200:'2hour' };
 
+/* Detalle que se pide además del listado de actividades. El listado de
+   Intervals.icu trae solo un resumen; el detalle incluye FTP/CP/W′, IF, IV,
+   FE, desacople, intervalos marcados y todos los campos de la fuente. */
+var MAX_DETAIL_ACTIVITIES = 12;
+var DETAIL_BEST_SECS = [60, 300, 1200];
+var DETAIL_BEST_COUNT = 6;
+
+/* El detalle llega con muchos campos a null que el listado sí tenía. Solo se
+   rellenan los huecos: el resumen ya descargado manda si trae un valor. */
+function mergeActivityDetail(a, d){
+  if (!a || !d || typeof d !== 'object') return a;
+  for (var k in d) {
+    if (!d.hasOwnProperty(k)) continue;
+    var v = d[k];
+    if (v === null || v === undefined) continue;
+    if (a[k] === undefined || a[k] === null || a[k] === '') a[k] = v;
+  }
+  a.activityDetail = d;
+  if (d.icu_intervals || d.interval_summary) {
+    a.intervalDetail = d.icu_intervals || d.interval_summary;
+  }
+  return a;
+}
+
+/* /best-efforts devuelve los N mejores esfuerzos de una duración con su
+   posición de inicio y fin. El primero es el pico; los demás delatan series. */
+function bestEffortMap(payload){
+  var out = {}, ev = (payload && payload.efforts) || payload, i, e, secs, avg;
+  // Algunas fuentes entregan ya un mapa {60:[...], 300:[...]}.
+  if (ev && typeof ev === 'object' &&
+      Object.prototype.toString.call(ev) !== '[object Array]' && !ev.efforts) {
+    for (var k in ev) {
+      if (!ev.hasOwnProperty(k)) continue;
+      secs = parseInt(String(k).replace(/[^0-9]/g, ''), 10);
+      if (!secs || Object.prototype.toString.call(ev[k]) !== '[object Array]') continue;
+      out[secs] = [];
+      for (i = 0; i < ev[k].length; i++) {
+        e = ev[k][i];
+        avg = numOr(typeof e === 'number' ? e : (e && (e.average || e.avg || e.watts)));
+        if (avg) out[secs].push({ start:e && e.start_index, end:e && e.end_index,
+                                  avg:Math.round(avg) });
+      }
+    }
+    return out;
+  }
+  if (Object.prototype.toString.call(ev) !== '[object Array]') return out;
+  for (i = 0; i < ev.length; i++) {
+    e = ev[i] || {};
+    secs = parseInt(e.duration || e.secs, 10);
+    avg  = numOr(e.average, e.avg, e.watts);
+    if (!secs || !avg) continue;
+    if (!out[secs]) out[secs] = [];
+    out[secs].push({ start:e.start_index, end:e.end_index, avg:Math.round(avg) });
+  }
+  for (var k2 in out) {
+    if (!out.hasOwnProperty(k2)) continue;
+    out[k2].sort(function(x, y){ return y.avg - x.avg; });
+  }
+  return out;
+}
+
+/* Devuelve el objeto de curva que trae los arrays, para leer también los
+   extras que calcula Intervals.icu (VO₂max 5 min, compound score, modelos…). */
+function curveInfo(c){
+  if (!c || typeof c !== 'object') return null;
+  if (Object.prototype.toString.call(c) === '[object Array]') {
+    for (var i = 0; i < c.length; i++) {
+      var found = curveInfo(c[i]);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (c.curves) return curveInfo(c.curves);
+  if (c.data) {
+    var inData = curveInfo(c.data);
+    if (inData) return inData;
+  }
+  return curveArrays(c) ? c : null;
+}
+
 /* La curva de potencia de Intervals.icu llega como {secs:[], watts:[]}.
    Se aceptan también las variantes con `values` y las listas de curvas. */
 function curveArrays(c){
@@ -2086,6 +2166,8 @@ function actPeaks(a){
     v = null;
     for (j = 0; j < keys.length && v === null; j++) v = numOr(a && a[keys[j]]);
     if (v === null && curve) v = peakAtSecs(curve, secs);
+    if (v === null && a && a.bestEfforts && a.bestEfforts[secs] &&
+        a.bestEfforts[secs].length) v = a.bestEfforts[secs][0].avg;
     if (v !== null) out[secs] = Math.round(v);
   }
   return out;
@@ -2124,13 +2206,21 @@ function actPerf(a){
     powerAvg:  numOr(a.avg_power, a.average_power, a.average_watts, a.icu_average_watts,
                      a.avgPower, a.averagePower, a.avgWatts, a.averageWatts),
     powerNp:   activityNP(a),
-    powerMax:  numOr(a.max_power, a.max_watts, a.icu_max_watts, a.maxPower, a.maxWatts),
+    powerMax:  numOr(a.max_power, a.max_watts, a.icu_max_watts, a.maxPower, a.maxWatts,
+                     a.icu_pm_p_max, a.ss_p_max, a.p_max),
     hrAvg:     numOr(a.average_heartrate, a.avg_hr, a.averageHR, a.averageHr, a.avgHeartRate),
     hrMax:     numOr(a.max_heartrate, a.max_hr, a.maxHR, a.maxHeartRate),
     hrMaxAthlete: numOr(a.athlete_max_hr, a.athleteMaxHr, a.hrMaxAthlete),
-    ftp:       numOr(a.icu_ftp, a.ftp, a.icu_pm_ftp),
-    cp:        numOr(a.icu_pm_cp, a.criticalPower, a.critical_power),
-    wPrime:    numOr(a.icu_pm_w_prime, a.w_prime, a.wPrime),
+    ftp:       numOr(a.icu_ftp, a.ftp, a.icu_pm_ftp, a.icu_pm_ftp_watts),
+    cp:        numOr(a.icu_pm_cp, a.criticalPower, a.critical_power, a.ss_cp, a.icu_rolling_cp),
+    wPrime:    numOr(a.icu_pm_w_prime, a.w_prime, a.wPrime, a.ss_w_prime,
+                     a.icu_rolling_w_prime, a.icu_w_prime),
+    ifac:      numOr(a.icu_intensity, a.intensityFactor, a.intensity_factor),
+    variab:    numOr(a.icu_variability_index, a.variability_index),
+    efSource:  numOr(a.icu_efficiency_factor, a.efficiency_factor),
+    decouple:  numOr(a.decoupling),
+    joulesAbove: numOr(a.icu_joules_above_ftp),
+    wbalDep:   numOr(a.icu_max_wbal_depletion),
     cadence:   numOr(a.avg_cadence, a.average_cadence, a.averageCadence, a.avgCadence),
     speed:     numOr(a.average_speed, a.avg_speed, a.averageSpeed),
     distance:  numOr(a.distance, a.distanceInMeters, a.distance_m),
@@ -2138,7 +2228,9 @@ function actPerf(a){
     calories:  numOr(a.calories),
     kj:        numOr(a.kj),
     load:      actLoad(a),
-    peaks:     actPeaks(a)
+    peaks:     actPeaks(a),
+    intervals: a.icu_intervals || a.intervalDetail || a.interval_summary || null,
+    bestEfforts: a.bestEfforts || null
   };
 }
 
@@ -2730,33 +2822,64 @@ function apiFetch(url, authHeader){
   return tryNext(0);
 }
 
-/* Las sesiones de Intervals.icu no traen los picos en el listado: están en
-   /activity/{id}/power-curve. Se piden solo para ciclismo con potencia y de
-   forma secuencial (la curva es un extra: si falla, la carga sigue). */
+/* El listado de Intervals.icu da solo un resumen. Para interpretar bien cada
+   sesión se pide, por actividad de ciclismo con potencia:
+     - /activity/{id}?intervals=true  → todos los campos + intervalos marcados
+     - /activity/{id}/power-curve     → la curva completa de mejor esfuerzo
+     - /activity/{id}/best-efforts    → los N mejores esfuerzos de 1, 5 y 20 min
+   Cada petición es independiente: si una falla, las demás se conservan. Se
+   procesa de una en una para no disparar el límite de peticiones del API. */
 function fetchPeakPowers(data, authHeader){
   if (!data || !data.activities || !data.activities.length) return Promise.resolve(data);
   var targets = [], i, a, m, id;
-  for (i = 0; i < data.activities.length && targets.length < 12; i++) {
+  for (i = 0; i < data.activities.length && targets.length < MAX_DETAIL_ACTIVITIES; i++) {
     a = data.activities[i];
     if (!a || sportKey(a) !== 'ciclismo') continue;
     m = actPerf(a);
     if (!m.powerAvg && !m.powerNp && !m.powerMax) continue;
     id = a.id || a.activityId || a.activity_id;
-    if (!id || a.powerCurve) continue;
+    if (!id || a.activityDetail) continue;
     targets.push({ a:a, id:id });
   }
   if (!targets.length) return Promise.resolve(data);
 
   var base = 'https://intervals.icu/api/v1/activity/', idx = 0;
+  function requests(t){
+    var id = encodeURIComponent(t.id), out = [
+      { k:'detail', u: base + id + '?intervals=true' },
+      { k:'curve',  u: base + id + '/power-curve' }
+    ];
+    for (var j = 0; j < DETAIL_BEST_SECS.length; j++) {
+      out.push({ k:'best', u: base + id + '/best-efforts?stream=watts&duration=' +
+                            DETAIL_BEST_SECS[j] + '&count=' + DETAIL_BEST_COUNT });
+    }
+    return out;
+  }
   function next(){
     if (idx >= targets.length) return Promise.resolve(data);
     var t = targets[idx++];
-    return apiFetch(base + encodeURIComponent(t.id) + '/power-curve', authHeader)
-      .then(function(curve){
-        if (curve && typeof curve === 'object') t.a.powerCurve = curve;
-      })
-      .catch(function(){ /* los picos son opcionales */ })
-      .then(next);
+    return Promise.all(requests(t).map(function(r){
+      return apiFetch(r.u, authHeader)
+        .then(function(j){ return { req:r, body:j }; })
+        .catch(function(){ return { req:r, body:null }; });
+    })).then(function(res){
+      for (var i = 0; i < res.length; i++) {
+        var r = res[i].req, j = res[i].body;
+        if (!j || typeof j !== 'object') continue;
+        if (r.k === 'detail') {
+          mergeActivityDetail(t.a, j);
+        } else if (r.k === 'curve') {
+          t.a.powerCurve = j;
+        } else if (r.k === 'best') {
+          if (!t.a.bestEfforts) t.a.bestEfforts = {};
+          var part = bestEffortMap(j);
+          for (var s in part) {
+            if (part.hasOwnProperty(s)) t.a.bestEfforts[s] = part[s];
+          }
+        }
+      }
+      return next();
+    });
   }
   return next();
 }
@@ -3636,39 +3759,63 @@ function garminActivities(g){
     var when = a.startTimeLocal || a.startTimeGMT || a.startLocal || a.startGMT ||
                a.calendarDate || a.startDateLocal || '';
     if (!when) continue;
+    // El detalle de Garmin mete las métricas en summaryDTO; el listado las
+    // trae sueltas. Se aceptan las dos formas para no perder ninguna.
+    var s = a.summaryDTO || a.summary || {};
     out.push({
       name:        a.activityName || a.name ||
                    (a.activityType && a.activityType.typeKey) || 'Actividad',
       start_date:  when,
       type:        (a.activityType && a.activityType.typeKey) || '',
-      distance:    a.distance || 0,
-      duration:    garminSecs(a.duration),
-      moving_time: garminSecs(a.movingTime || a.duration),
+      distance:    a.distance || s.distance || 0,
+      duration:    garminSecs(a.duration || s.duration),
+      moving_time: garminSecs(a.movingTime || a.duration || s.movingTime || s.duration),
       id:          a.activityId || a.summaryId || null,
       // Métricas de rendimiento (mismas claves que Intervals.icu) para el
       // desplegable del calendario y el informe de IA.
-      average_heartrate: a.averageHR || a.averageHr || null,
-      max_heartrate:     a.maxHR || a.maxHeartRate || null,
-      avg_power:         a.avgPower || a.averagePower || null,
+      average_heartrate: a.averageHR || a.averageHr || s.averageHR || s.averageHr || null,
+      max_heartrate:     a.maxHR || a.maxHeartRate || s.maxHR || s.maxHeartRate || null,
+      avg_power:         a.avgPower || a.averagePower || s.avgPower || s.averagePower || null,
       normalized_power:  a.normalizedPower || a.npPower || a.normPower ||
-                         a.weightedAveragePower || a.icuWeightedAvgWatts || null,
-      max_power:         a.maxPower || null,
-      peak_power_1m:     a.peakPower1m || a.peakPower1min || a.maxPower1min || null,
-      peak_power_5m:     a.peakPower5m || a.peakPower5min || a.maxPower5min || null,
+                         a.weightedAveragePower || a.icuWeightedAvgWatts ||
+                         s.normalizedPower || s.normPower || s.weightedAveragePower || null,
+      max_power:         a.maxPower || s.maxPower || s.maxWatts || null,
+      peak_power_30s:    a.peakPower30s || a.peakPower30sec || null,
+      peak_power_1m:     a.peakPower1m || a.peakPower1min || a.maxPower1min ||
+                         s.peakPower1m || null,
+      peak_power_2m:     a.peakPower2m || a.peakPower2min || null,
+      peak_power_5m:     a.peakPower5m || a.peakPower5min || a.maxPower5min ||
+                         s.peakPower5m || null,
       peak_power_8m:     a.peakPower8m || a.peakPower8min || a.maxPower8min || null,
-      peak_power_10m:    a.peakPower10m || a.peakPower10min || a.maxPower10min || null,
-      peak_power_20m:    a.peakPower20m || a.peakPower20min || a.maxPower20min || null,
-      peak_power_1h:     a.peakPower1h || a.peakPower1hour || a.maxPower1hour || null,
-      ftp:               a.ftp || a.functionalThresholdPower || a.maxFtp || null,
-      icu_intensity:     a.intensityFactor || a.icu_intensity || null,
-      cp:                a.criticalPower || null,
-      athlete_max_hr:    a.athleteMaxHeartRate || null,
-      powerCurve:        a.powerCurve || a.power_curve || null,
-      avg_cadence:       a.averageCadence || a.avgCadence || null,
-      average_speed:     a.averageSpeed || null,
-      elevation_gain:    a.totalElevationGain || a.elevationGain || null,
-      calories:          a.calories || null,
-      icu_training_load: a.trainingLoad || a.activityTrainingLoad || null
+      peak_power_10m:    a.peakPower10m || a.peakPower10min || a.maxPower10min ||
+                         s.peakPower10m || null,
+      peak_power_15m:    a.peakPower15m || a.peakPower15min || null,
+      peak_power_20m:    a.peakPower20m || a.peakPower20min || a.maxPower20min ||
+                         s.peakPower20m || null,
+      peak_power_30m:    a.peakPower30m || a.peakPower30min || null,
+      peak_power_1h:     a.peakPower1h || a.peakPower1hour || a.maxPower1hour ||
+                         s.peakPower1h || null,
+      peak_power_2h:     a.peakPower2h || a.peakPower2hour || null,
+      ftp:               a.ftp || a.functionalThresholdPower || a.maxFtp ||
+                         s.ftp || s.functionalThresholdPower || null,
+      icu_pm_cp:         a.criticalPower || a.cp || s.criticalPower || null,
+      icu_pm_w_prime:    a.wPrime || a.wPrimeJoules || s.wPrime || null,
+      icu_intensity:     a.intensityFactor || a.icu_intensity || s.intensityFactor || null,
+      icu_variability_index: a.variabilityIndex || a.icu_variability_index || null,
+      icu_efficiency_factor: a.efficiencyFactor || a.icu_efficiency_factor || null,
+      decoupling:        a.decoupling || s.decoupling || null,
+      icu_joules_above_ftp: a.joulesAboveFtp || s.joulesAboveFtp || null,
+      athlete_max_hr:    a.athleteMaxHeartRate || a.athleteMaxHr || null,
+      powerCurve:        a.powerCurve || a.power_curve || s.powerCurve || null,
+      bestEfforts:       bestEffortMap(a.bestEfforts || a.best_efforts ||
+                                       s.bestEfforts || null),
+      intervalDetail:    a.icuIntervals || a.intervals || s.intervals || null,
+      avg_cadence:       a.averageCadence || a.avgCadence || s.averageCadence || null,
+      average_speed:     a.averageSpeed || s.averageSpeed || null,
+      elevation_gain:    a.totalElevationGain || a.elevationGain || s.totalElevationGain || null,
+      calories:          a.calories || s.calories || null,
+      icu_training_load: a.trainingLoad || a.activityTrainingLoad ||
+                         s.trainingLoad || null
     });
   }
   return out;
@@ -5442,6 +5589,62 @@ function actVal(v, suffix){
   return (v === null || v === undefined) ? 'sin dato' : String(v) + (suffix || '');
 }
 
+/* Campos que vienen ya calculados en el detalle de la fuente y que antes se
+   descartaban: intervalos marcados, mejores esfuerzos repetidos y métricas
+   medidas (IF, IV, FE, desacople, julios por encima de FTP…). */
+function detailMetricsText(a, m){
+  var parts = [], i, j, iv, be, c, e, dur, watts, bp;
+  function add(label, value){
+    if (value !== null && value !== undefined) parts.push(label + ': ' + value);
+  }
+  add('IF declarado por la fuente', m.ifac !== null ? round2(m.ifac) : null);
+  add('IV declarado por la fuente', m.variab !== null ? round2(m.variab) : null);
+  add('FE declarado por la fuente', m.efSource !== null ? round2(m.efSource) + ' W/bpm' : null);
+  add('Desacople declarado', m.decouple !== null ? round1(m.decouple) + ' %' : null);
+  add('Julios por encima de FTP', m.joulesAbove !== null ? Math.round(m.joulesAbove) + ' J' : null);
+  add('Agotamiento máximo de W′', m.wbalDep !== null ? Math.round(m.wbalDep) + ' J' : null);
+  add('CP declarado', m.cp !== null ? Math.round(m.cp) + ' W' : null);
+  add('W′ declarada', m.wPrime !== null ? Math.round(m.wPrime) + ' J' : null);
+
+  iv = m.intervals;
+  if (Object.prototype.toString.call(iv) === '[object Array]' && iv.length) {
+    var desc = [], n = Math.min(iv.length, 8);
+    for (i = 0; i < n; i++) {
+      e = iv[i] || {};
+      dur = (parseFloat(e.end_index || e.duration) || 0) - (parseFloat(e.start_index) || 0);
+      watts = numOr(e.average_watts, e.weighted_average_watts, e.average_power);
+      desc.push((dur > 0 ? Math.round(dur) + ' s' : 'intervalo') +
+                (watts !== null ? ' a ' + Math.round(watts) + ' W' : ''));
+    }
+    parts.push('Intervalos marcados en la sesión: ' + iv.length + ' (' + desc.join('; ') +
+               (iv.length > n ? ', …' : '') + ')');
+  }
+
+  be = m.bestEfforts;
+  if (be && Object.keys(be).length) {
+    bp = [];
+    for (j = 0; j < DETAIL_BEST_SECS.length; j++) {
+      var secs = DETAIL_BEST_SECS[j], arr = be[secs];
+      if (!arr || !arr.length) continue;
+      bp.push(PEAK_LABEL[secs] + ': ' + arr.length + ' esfuerzos [' +
+              arr.slice(0, 4).filter(function(x){ return x && x.avg; })
+                 .map(function(x){ return x.avg + ' W'; }).join(', ') + ']');
+    }
+    if (bp.length) {
+      parts.push('Mejores esfuerzos repetidos (best efforts): ' + bp.join('; ') + '.');
+    }
+  }
+
+  c = curveInfo(a && a.powerCurve);
+  if (c) {
+    var vo2 = numOr(c.vo2max_5m), cs = numOr(c.compound_score_5m);
+    if (vo2 !== null) add('VO₂max 5 min según la fuente', round1(vo2) + ' ml/kg/min');
+    if (cs !== null) add('Compound score 5 min según la fuente', round1(cs));
+  }
+  return parts.length ? 'Detalle completo de la actividad (datos de la fuente): ' +
+                        parts.join('. ') + '.' : '';
+}
+
 /* Todo lo que se le cuenta a la IA: la sesión y el contexto del día. */
 function activityContextText(a, d, key){
   var m = actPerf(a), info = actInfo(a);
@@ -5463,6 +5666,8 @@ function activityContextText(a, d, key){
     peakParts.push(PEAK_LABEL[ps] + ': ' + actVal(m.peaks[ps], ' W'));
   }
   L.push('Picos de potencia (mejores esfuerzos medios): ' + peakParts.join('; ') + '.');
+  var detail = detailMetricsText(a, m);
+  if (detail) L.push(detail);
 
   var pm = powerModel(), eff = efficiencyBaseline(), ft = fitnessTrend();
   var th = cyclingThreshold();
@@ -5596,7 +5801,8 @@ function buildActivitySystemPrompt(a, d, key, followUp){
            'de forma breve y concreta (máximo 180 palabras). Usa como contexto el ' +
            'informe anterior y los datos siguientes. Usa los mismos criterios contrastados ' +
            '(NP/TSS e IF y variabilidad de Coggan; CP/W′, picos y W′ de Monod y Scherrer; ' +
-           'FE y VO₂; tendencia de forma, HRV/sueño/TSB y ACWR) y cita el marco cuando ' +
+           'intervalos y mejores esfuerzos repetidos; FE y VO₂; tendencia de forma, ' +
+           'HRV/sueño/TSB y ACWR) y cita el marco cuando ' +
            'proceda. Sé honesto, no des diagnósticos médicos y no repitas el informe completo.\n';
   } else {
     head = 'Eres RecoveryIQ, analista de rendimiento deportivo basado en fisiología del ejercicio. ' +
@@ -5611,8 +5817,12 @@ function buildActivitySystemPrompt(a, d, key, followUp){
            'TSS = IF² × horas × 100, IV = NP/media) y el modelo CP/W′ de Monod y Scherrer. ' +
            'Comenta TODOS los picos disponibles (30 s, 1, 2, 5, 8, 10, 15, 20, 30 min, 1 y 2 h), ' +
            'no solo la media: qué duraciones destacan frente al FTP/CP, cuánta W′ se gastó y ' +
-           'si el perfil es de series/intervalos o continuo. Si hizo series, valora si estuvieron ' +
-           'bien dosificadas y si se sostuvieron. Si el umbral es estimado, dilo y matiza. ' +
+           'si el perfil es de series/intervalos o continuo. Usa los INTERVALOS marcados y los ' +
+           'MEJORES ESFUERZOS REPETIDOS (best efforts) que se facilitan: si hay varios esfuerzos ' +
+           'por encima de CP/FTP, es series; di cuántos hubo, a qué vatios y si se sostuvieron. ' +
+           'Si la fuente declara IF, IV, FE o desacople, usa esos valores medidos antes que los ' +
+           'calculados aquí. Si hizo series, valora si estuvieron bien dosificadas. ' +
+           'Si el umbral es estimado, dilo y matiza. ' +
            'Si aparece un AVISO DE COHERENCIA entre el TSS esperado y el registrado, prioriza el ' +
            'TSS registrado y su IF/FTP implicados: no concluyas que la sesión fue muy dura apoyándote ' +
            'solo en un umbral estimado que no cuadra. ' +
