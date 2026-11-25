@@ -76,7 +76,13 @@ const setup = `
     start_date_local: yesterday + ' 09:00:00', moving_time: 3600,
     avg_power: 205, normalized_power: 210, average_heartrate: 132
   }];
-  data.activities = [ride, data.dailyMap[yesterday].acts[0], walk];
+  var oldRide = {
+    id:'ride-antiguo', type:'Ride', name:'Rodaje de hace 20 días',
+    start_date_local: ymd(shiftDays(parseYmd(tk), -20)) + ' 09:00:00',
+    moving_time: 3600, avg_power: 200, normalized_power: 205,
+    average_heartrate: 125, peak_power_20m: 250
+  };
+  data.activities = [ride, data.dailyMap[yesterday].acts[0], oldRide, walk];
   data.today.acts = [ride, walk];
   initApp(data);
   showTab('calendar');
@@ -135,23 +141,26 @@ eq(aiCalls.length, 1, 'se ha llamado al proxy de IA');
 const call = aiCalls[0];
 ok(call.url.indexOf('/ai') >= 0, 'usa el proxy /ai');
 eq(call.opts.method, 'POST', 'petición POST');
-eq(call.body.max_tokens, 1100, 'informe completo con más tokens');
+eq(call.body.max_tokens, 1300, 'informe completo con más tokens');
 const sys = call.body.system;
-ok(sys.indexOf('POTENCIA CON CRITERIOS CONTRASTADOS') >= 0, 'pide valorar los vatios');
+ok(sys.indexOf('POTENCIA Y TODOS LOS PICOS') >= 0, 'pide valorar los vatios y todos los picos');
+ok(sys.indexOf('ESTADO DE FORMA') >= 0, 'pide valorar el estado de forma');
 ok(sys.indexOf('CÓMO MEJORAR') >= 0, 'pide dónde mejorar');
 ok(sys.indexOf('245 W') >= 0, 'incluye la potencia media de la sesión');
 ok(sys.indexOf('258 W') >= 0, 'incluye la potencia normalizada');
-ok(sys.indexOf('234 W') >= 0, 'incluye la media habitual de ciclismo (258 y 210 → 234)');
+ok(sys.indexOf('224 W') >= 0, 'incluye la media habitual de ciclismo (258, 210 y 205 → 224)');
 ok(sys.indexOf('HRV') >= 0, 'incluye la HRV del día');
 ok(sys.indexOf('FC nocturna') >= 0, 'incluye la FC nocturna');
 ok(sys.indexOf('FC mínima registrada') >= 0 && sys.indexOf('47 bpm') >= 0,
    'incluye el pulso mínimo');
 ok(sys.indexOf('Estado de recuperación') >= 0, 'incluye el estado de recuperación');
 ok(sys.indexOf('Picos de potencia') >= 0, 'incluye los picos de potencia');
+ok(sys.indexOf('30 s: sin dato') >= 0 && sys.indexOf('15 min: sin dato') >= 0,
+   'pasa la curva ampliada, no solo los seis picos clásicos');
 ok(sys.indexOf('8 min: 310 W') >= 0 && sys.indexOf('1 h: 255 W') >= 0,
    'pasa todos los picos (8 min y 1 h)');
-ok(sys.indexOf('picos de 1, 5, 8, 10, 20 min y 1 h') >= 0,
-   'el prompt pide analizar los picos');
+ok(sys.indexOf('TODOS los picos disponibles (30 s, 1, 2, 5, 8, 10, 15, 20, 30 min, 1 y 2 h)') >= 0,
+   'el prompt pide analizar todos los picos');
 ok(sys.indexOf('Sueño') >= 0, 'incluye el sueño');
 ok(sys.indexOf('Peso registrado') >= 0, 'incluye el peso');
 ok(sys.indexOf('W/kg') >= 0, 'incluye vatios por kilo');
@@ -161,6 +170,8 @@ ok(sys.indexOf('Umbral de potencia de referencia: 266 W') >= 0,
    'calcula el umbral desde el mejor esfuerzo de 20 min (280 × 0,95)');
 ok(sys.indexOf('estimado: 95 % de tu mejor esfuerzo de 20 min') >= 0,
    'advierte de que el umbral está estimado, no medido');
+ok(sys.indexOf('Modelo CP/W′ (Monod y Scherrer): CP estimado 262 W, W′ 22 kJ') >= 0,
+   'ajusta CP/W′ con todos los esfuerzos recientes');
 ok(sys.indexOf('Factor de intensidad') >= 0 && sys.indexOf('IF = NP / umbral') >= 0,
    'incluye el factor de intensidad (IF)');
 ok(sys.indexOf('IF² × horas × 100') >= 0, 'explica el TSS según Coggan');
@@ -168,16 +179,28 @@ ok(sys.indexOf('Índice de variabilidad') >= 0 && sys.indexOf('1.05') >= 0,
    'incluye el índice de variabilidad (NP/media)');
 ok(sys.indexOf('Factor de eficiencia') >= 0 && sys.indexOf('1.74 W/bpm') >= 0,
    'incluye la eficiencia NP/FC media');
+ok(sys.indexOf('FE habitual: 1.66 W/bpm en 3 sesiones') >= 0,
+   'contrasta la eficiencia de hoy con la de otras sesiones');
+ok(sys.indexOf('VO₂max estimado desde tu mejor 5 min: 57.3 ml/kg/min') >= 0,
+   'estima el VO₂max con la ecuación del test de 5 min');
+ok(sys.indexOf('Perfil de esfuerzo: 5 min/20 min = 1.18') >= 0 &&
+   sys.indexOf('Perfil de series/intervalos') >= 0,
+   'detecta el perfil de series por los picos cortos');
+ok(sys.indexOf('W′ consumida estimada en el mejor 5 min: 20 kJ') >= 0,
+   'cuantifica la W′ gastada en las series');
+ok(sys.indexOf('Evolución de tu mejor 20 min: 280 W en los últimos 14 días frente a 250 W en los 14 días anteriores (+12 %, en mejora)') >= 0,
+   'informa de la tendencia de forma');
 ok(sys.indexOf('TSS registrado: 82') >= 0, 'contrasta el TSS estimado con el registrado');
 ok(sys.indexOf('Coggan') >= 0, 'cita el modelo NP/TSS de Coggan');
 ok(sys.indexOf('Monod y Scherrer') >= 0, 'cita el modelo CP/W′');
+ok(sys.indexOf('Sitko') >= 0, 'cita la ecuación de VO₂ de Sitko et al.');
 ok(sys.indexOf('Banister') >= 0 && sys.indexOf('ACWR') >= 0,
    'cita Banister y el ratio agudo/crónico');
 ok(sys.indexOf('Gabbett') >= 0, 'cita a Gabbett para el ACWR');
 ok(sys.indexOf('7–9 horas') >= 0, 'usa el rango de sueño recomendado');
 ok(sys.indexOf('Ratio de carga aguda/crónica') >= 0 && sys.indexOf('1.06') >= 0,
    'calcula el ratio ATL/CTL (72/68)');
-ok(sys.indexOf('Máximo 400 palabras') >= 0, 'informe más completo (400 palabras)');
+ok(sys.indexOf('Máximo 500 palabras') >= 0, 'informe más completo (500 palabras)');
 
 eq(call.body.messages[0].role, 'user', 'el historial empieza con usuario');
 ok(sys.indexOf('<') < 0, 'el system prompt es texto plano, sin HTML');
@@ -299,7 +322,7 @@ run(`
 await wait(30);
 const curveUrls = run('window.__curveUrls');
 eq(run('window.__curveDone'), true, 'termina la carga de curvas');
-ok(curveUrls.length === 2, 'pide una curva por sesión de ciclismo (2)', curveUrls.length);
+ok(curveUrls.length === 3, 'pide una curva por sesión de ciclismo (3)', curveUrls.length);
 ok(curveUrls[0].indexOf('/activity/ride-hoy/power-curve') >= 0,
    'usa el endpoint de potencia de la actividad');
 eq(run('actPerf(S.data.activities[1]).peaks[300]'), 315,

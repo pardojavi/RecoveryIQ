@@ -496,12 +496,24 @@ que cite el marco correspondiente:
 - **Potencia normalizada y TSS (Coggan)**: se calculan el factor de intensidad
   (IF = NP/umbral), el TSS esperado (IF² × horas × 100) y el índice de
   variabilidad (NP/potencia media) para juzgar el ritmo.
-- **Potencia crítica y W′ (Monod y Scherrer)**: los picos de 1 min a 1 h se
-  comparan con el umbral; cuando la fuente no da FTP/CP, la app lo estima con
-  el convenio de 20 min (95 % del mejor esfuerzo de 20 min reciente) y se lo
-  indica a la IA para que matice la conclusión.
-- **Eficiencia**: factor NP/FC media comparado con las demás sesiones, con el
-  % de FC máxima si se conoce, para distinguir potencia barata de costosa.
+- **Todos los picos, no solo las medias**: la IA recibe los mejores esfuerzos
+  de **30 s, 1, 2, 5, 8, 10, 15, 20, 30 min, 1 y 2 h** (de los campos de la
+  fuente o interpolados de la curva de potencia). Con ellos compara cada
+  duración frente al umbral, detecta si hubo **series/intervalos** (picos
+  cortos muy por encima del esfuerzo de 20 min) y estima la **W′ gastada**.
+- **Potencia crítica y W′ (Monod y Scherrer)**: se ajusta el modelo
+  trabajo = CP·t + W′ por mínimos cuadrados sobre los mejores esfuerzos
+  recientes de 2–30 min. Cuando la fuente no da FTP/CP, se calcula además el
+  FTP habitual con el convenio de 20 min (95 % del mejor esfuerzo de 20 min).
+  La IA sabe distinguir ambos orígenes y matiza la conclusión si son
+  estimaciones.
+- **Eficiencia y VO₂**: factor NP/FC media comparado con la media de tus
+  otras sesiones, % de FC máxima si se conoce, y **VO₂max orientativo** con la
+  ecuación del test de 5 min de Sitko et al. (16,6 + 8,87 × W/kg de 5 min),
+  advirtiendo de que solo es fiable si el esfuerzo fue cercano al máximo.
+- **Estado de forma**: evolución de tu mejor 20 min en los últimos 14 días
+  frente a los 14 anteriores, junto con CTL/ATL/TSB y el ratio agudo/crónico,
+  para decir si tu base aeróbica mejora, se mantiene o cae.
 - **Recuperación con evidencia**: HRV solo frente a la base individual, sueño
   frente al rango recomendado de 7–9 h y sus fases, FC nocturna/mínima,
   temperatura, balance de carga de Banister (TSB) y ratio agudo/crónico
@@ -724,7 +736,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 ## 9. Verificación
 
 Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
-(**685 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+(**694 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
 `tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
@@ -807,7 +819,7 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
 
-### `test-calendar-ai.mjs` — 107 aserciones
+### `test-calendar-ai.mjs` — 116 aserciones
 
 - Semana del calendario de lunes a domingo (rótulos y casillas vacías iniciales).
 - Desplegable del día con 2 sesiones: nombre personalizado, potencia media,
@@ -815,18 +827,22 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
   los seis picos (1 m, 5 m, 8 m, 10 m, 20 m y 1 h) y por kilo, FC, cadencia,
   distancia, desnivel y carga. La normalizada se reconoce con varios nombres y
   se deriva de IF × FTP si la fuente solo da esos dos datos.
-- Payload del informe: POST a `/ai`, 1100 tokens, prompt en texto plano con
-  vatios, picos, media habitual de ciclismo, HRV, FC nocturna, FC mínima,
-  estado de recuperación, sueño, peso y W/kg.
-- Criterios científicos: umbral estimado desde el mejor 20 min, IF, TSS de
-  Coggan, índice de variabilidad, eficiencia NP/FC, CP/W′ de Monod y Scherrer,
-  Banister, Gabbett (ACWR), rango de sueño 7–9 h y ratio ATL/CTL.
+- Payload del informe: POST a `/ai`, 1300 tokens, prompt en seis partes con
+  todos los picos (30 s–2 h), media habitual de ciclismo, CP/W′, FE y VO₂,
+  tendencia de forma, HRV, FC nocturna, FC mínima, estado de recuperación,
+  sueño, peso y W/kg.
+- Criterios científicos: umbral estimado desde el mejor 20 min, IF, TSS e IV de
+  Coggan, CP/W′ de Monod y Scherrer ajustado por mínimos cuadrados, W′ gastada
+  en las series, VO₂ de Sitko et al., eficiencia frente a la propia media,
+  tendencia del mejor 20 min, Banister, Gabbett (ACWR), rango de sueño 7–9 h y
+  ratio ATL/CTL.
 - Informe pintado, caché en `S.activityReports`, preguntas rápidas, campo libre
   y tecla Enter: segunda llamada con 600 tokens, prompt en modo pregunta y el
   informe anterior como contexto. El hilo sobrevive a repintar el calendario.
-- Curvas de potencia: extracción/interpolación de los seis picos, petición
-  opcional a `/activity/{id}/power-curve` solo para ciclismo con vatios y
-  normalización de los campos de Garmin.
+- Curvas de potencia: extracción/interpolación de los once picos que recibe la
+  IA (30 s–2 h), seis de ellos pintados en el desplegable, petición opcional a
+  `/activity/{id}/power-curve` solo para ciclismo con vatios y normalización de
+  los campos de Garmin.
 - Normalización de la FC mínima (Intervals.icu y Garmin) y de la potencia
   normalizada (`norm_power`, `icu_weighted_avg_watts`).
 - Las cuatro suites leen el HTML desde la carpeta del proyecto mediante

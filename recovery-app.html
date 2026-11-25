@@ -1996,13 +1996,18 @@ function numOr(){
   return null;
 }
 
-/* Duraciones de los picos de potencia que se muestran y se pasan a la IA. */
-var PEAK_SECS  = [60, 300, 480, 600, 1200, 3600];
-var PEAK_LABEL = { 60:'1 min', 300:'5 min', 480:'8 min', 600:'10 min',
-                   1200:'20 min', 3600:'1 h' };
-var PEAK_SHORT = { 60:'1m', 300:'5m', 480:'8m', 600:'10m', 1200:'20m', 3600:'1h' };
-var PEAK_LONG  = { 60:'1min', 300:'5min', 480:'8min', 600:'10min',
-                   1200:'20min', 3600:'1hour' };
+/* Duraciones que analiza la IA (curva completa) y las que se pintan en el
+   desplegable (las seis clásicas, para no recargar la interfaz). */
+var PEAK_SECS  = [30, 60, 120, 300, 480, 600, 900, 1200, 1800, 3600, 7200];
+var UI_PEAK_SECS = [60, 300, 480, 600, 1200, 3600];
+var PEAK_LABEL = { 30:'30 s', 60:'1 min', 120:'2 min', 300:'5 min', 480:'8 min',
+                   600:'10 min', 900:'15 min', 1200:'20 min', 1800:'30 min',
+                   3600:'1 h', 7200:'2 h' };
+var PEAK_SHORT = { 30:'30s', 60:'1m', 120:'2m', 300:'5m', 480:'8m', 600:'10m',
+                   900:'15m', 1200:'20m', 1800:'30m', 3600:'1h', 7200:'2h' };
+var PEAK_LONG  = { 30:'30sec', 60:'1min', 120:'2min', 300:'5min', 480:'8min',
+                   600:'10min', 900:'15min', 1200:'20min', 1800:'30min',
+                   3600:'1hour', 7200:'2hour' };
 
 /* La curva de potencia de Intervals.icu llega como {secs:[], watts:[]}.
    Se aceptan también las variantes con `values` y las listas de curvas. */
@@ -2066,7 +2071,8 @@ function actPeaks(a){
       'power_peak_' + short, 'power_' + short + '_peak',
       'peak_power_' + long, 'peak_' + long + '_power', 'peak_' + long,
       'peakPower' + long, 'maxPower' + long, 'bestPower' + long,
-      'power_peak_' + long, 'power_' + long + '_peak'
+      'power_peak_' + long, 'power_' + long + '_peak',
+      'maxAvgPower_' + secs
     ];
     v = null;
     for (j = 0; j < keys.length && v === null; j++) v = numOr(a && a[keys[j]]);
@@ -2136,8 +2142,8 @@ function actMetricRows(a, weight){
     add('Potencia media',  m.powerAvg ? Math.round(m.powerAvg) + ' W' : null);
     add('Potencia normalizada', m.powerNp ? Math.round(m.powerNp) + ' W' : null);
     add('Potencia m&#225;xima', m.powerMax ? Math.round(m.powerMax) + ' W' : null);
-    for (var pi = 0; pi < PEAK_SECS.length; pi++) {
-      var ps = PEAK_SECS[pi];
+    for (var pi = 0; pi < UI_PEAK_SECS.length; pi++) {
+      var ps = UI_PEAK_SECS[pi];
       add('Pico ' + PEAK_LABEL[ps], m.peaks[ps] ? m.peaks[ps] + ' W' : null);
     }
     var wp = m.powerNp || m.powerAvg;
@@ -2213,6 +2219,99 @@ function cyclingThreshold(){
   }
   if (best60) return { w: best60, source: 'estimado: tu mejor esfuerzo de 1 h reciente' };
   return null;
+}
+
+/* Modelo de potencia crítica de Monod y Scherrer: trabajo = CP·t + W′.
+   Se ajusta por mínimos cuadrados sobre la mejor potencia reciente de cada
+   duración (2–30 min), no sobre una sola sesión. Da CP y W′ para interpretar
+   los picos cortos frente al esfuerzo sostenido. */
+function powerModel(){
+  var list = (S.data && S.data.activities) || [], fit = [120, 180, 300, 480, 600, 900, 1200, 1800];
+  var best = {}, pts = [], i, j, a, pk, t, p;
+  for (j = 0; j < fit.length; j++) best[fit[j]] = 0;
+  for (i = 0; i < list.length; i++) {
+    a = list[i];
+    if (!a || sportKey(a) !== 'ciclismo') continue;
+    pk = actPerf(a).peaks;
+    for (j = 0; j < fit.length; j++) if (pk[fit[j]] > best[fit[j]]) best[fit[j]] = pk[fit[j]];
+  }
+  for (j = 0; j < fit.length; j++) {
+    t = fit[j]; p = best[t];
+    if (p > 0) pts.push({ t:t, y:p * t });
+  }
+  if (pts.length < 3) return null;
+  var n = pts.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (j = 0; j < n; j++) {
+    sx  += pts[j].t;
+    sy  += pts[j].y;
+    sxx += pts[j].t * pts[j].t;
+    sxy += pts[j].t * pts[j].y;
+  }
+  var den = n * sxx - sx * sx;
+  if (den <= 0) return null;
+  var cp = (n * sxy - sx * sy) / den, wp = (sy - cp * sx) / n;
+  if (!isFinite(cp) || !isFinite(wp) || cp < 80 || cp > 600 || wp < 0 || wp > 80000) return null;
+  return { cp: Math.round(cp), wp: Math.round(wp), wpKj: Math.round(wp / 1000), n: n,
+           source: 'ajuste CP/W′ (Monod y Scherrer) sobre ' + n + ' mejores esfuerzos recientes' };
+}
+
+/* Eficiencia habitual (NP/FC media) para saber si la de hoy es mejor o peor
+   que la de sus otras sesiones, no solo un número aislado. */
+function efficiencyBaseline(){
+  var list = (S.data && S.data.activities) || [], vals = [], i, m, fe, sum = 0;
+  for (i = 0; i < list.length; i++) {
+    if (!list[i] || sportKey(list[i]) !== 'ciclismo') continue;
+    m = actPerf(list[i]);
+    if (m.powerNp && m.hrAvg) vals.push(m.powerNp / m.hrAvg);
+  }
+  if (vals.length < 2) return null;
+  for (i = 0; i < vals.length; i++) sum += vals[i];
+  return { avg: round2(sum / vals.length), n: vals.length };
+}
+
+/* Estado de forma: evolución del mejor esfuerzo de 20 min en los últimos 14
+   días frente a los 14 días anteriores (misma idea que la tendencia de CTL). */
+function bestPeakBetween(secs, fromYmd, toYmd){
+  var list = (S.data && S.data.activities) || [], best = 0, i, k, p;
+  for (i = 0; i < list.length; i++) {
+    if (!list[i] || sportKey(list[i]) !== 'ciclismo') continue;
+    k = actDayKey(list[i]);
+    if (!k || k < fromYmd || (toYmd && k > toYmd)) continue;
+    p = actPerf(list[i]).peaks[secs];
+    if (p > best) best = p;
+  }
+  return best;
+}
+
+function fitnessTrend(){
+  var today = ymd(new Date()), d14 = ymd(shiftDays(new Date(), -14)),
+      d28 = ymd(shiftDays(new Date(), -28));
+  var recent = bestPeakBetween(1200, d14, today), prev = bestPeakBetween(1200, d28, d14);
+  if (!recent || !prev) return null;
+  var pct = Math.round((recent / prev - 1) * 100);
+  return { recent: recent, prev: prev, pct: pct,
+           label: pct >= 3 ? 'en mejora' : (pct <= -3 ? 'en retroceso' : 'estable') };
+}
+
+/* Perfil de la sesión: compara picos cortos con el esfuerzo de 20 min y con
+   la variabilidad para detectar series, y estima la W′ gastada en el mejor
+   5 min cuando conocemos la potencia crítica. */
+function seriesProfile(m, cp){
+  var p30 = m.peaks[30], p1 = m.peaks[60], p5 = m.peaks[300], p20 = m.peaks[1200] || m.peaks[600];
+  if (!p20 || !p5) return null;
+  var r5 = p5 / p20, r1 = p1 ? p1 / p20 : 0, r30 = p30 ? p30 / p20 : 0;
+  var vi = (m.powerNp && m.powerAvg) ? m.powerNp / m.powerAvg : 0;
+  var series = r5 >= 1.10 || r1 >= 1.25 || (vi && vi >= 1.08);
+  var txt = 'Perfil de esfuerzo: 5 min/20 min = ' + round2(r5) +
+            (p1 ? ', 1 min/20 min = ' + round2(r1) : '') +
+            (p30 ? ', 30 s/20 min = ' + round2(r30) : '') +
+            (vi ? ', IV = ' + round2(vi) : '') + '. ' +
+            (series ? 'Perfil de series/intervalos: los picos cortos destacan sobre el esfuerzo sostenido.'
+                    : 'Perfil continuo, sin señal clara de series.');
+  if (cp && p5 > cp) {
+    txt += ' W′ consumida estimada en el mejor 5 min: ' + Math.round((p5 - cp) * 300 / 1000) + ' kJ.';
+  }
+  return txt;
 }
 
 /* El &#237;ndice se descompone para poder explicarlo: adem&#225;s de HRV, FC,
@@ -5356,8 +5455,19 @@ function activityContextText(a, d, key){
   }
   L.push('Picos de potencia (mejores esfuerzos medios): ' + peakParts.join('; ') + '.');
 
+  var pm = powerModel(), eff = efficiencyBaseline(), ft = fitnessTrend();
   var th = cyclingThreshold();
   if (th) L.push('Umbral de potencia de referencia: ' + th.w + ' W (' + th.source + ').');
+  if (pm) {
+    L.push('Modelo CP/W′ (Monod y Scherrer): CP estimado ' + pm.cp + ' W, W′ ' +
+           pm.wpKj + ' kJ, ajustado con ' + pm.n + ' duraciones de tus mejores esfuerzos (' +
+           pm.source + ').');
+  }
+  if (ft) {
+    L.push('Evolución de tu mejor 20 min: ' + ft.recent + ' W en los últimos 14 días frente a ' +
+           ft.prev + ' W en los 14 días anteriores (' + (ft.pct > 0 ? '+' : '') + ft.pct +
+           ' %, ' + ft.label + '). Estado de forma: ' + ft.label + '.');
+  }
   if (m.powerNp && m.powerAvg) {
     L.push('Índice de variabilidad (IV = NP / potencia media): ' +
            round2(m.powerNp / m.powerAvg) +
@@ -5365,9 +5475,18 @@ function activityContextText(a, d, key){
            'un IV alto indica picos y peor economía de ritmo.');
   }
   if (m.powerNp && m.hrAvg) {
-    L.push('Factor de eficiencia (FE = NP / FC media): ' +
-           round2(m.powerNp / m.hrAvg) + ' W/bpm. ' +
-           'A igual FC, un FE más alto indica mejor eficiencia; compáralo con tus otras sesiones.');
+    var feNow = m.powerNp / m.hrAvg;
+    L.push('Factor de eficiencia (FE = NP / FC media): ' + round2(feNow) + ' W/bpm.' +
+           (eff ? ' FE habitual: ' + eff.avg + ' W/bpm en ' + eff.n +
+                  ' sesiones (' + (feNow >= eff.avg ? 'por encima' : 'por debajo') +
+                  ' de tu media).' : ' No hay suficientes sesiones para comparar.') +
+           ' A igual FC, un FE más alto indica mejor economía.');
+  }
+  if (w && m.peaks[300]) {
+    var w5kg = m.peaks[300] / w;
+    L.push('VO₂max estimado desde tu mejor 5 min: ' + round1(16.6 + 8.87 * w5kg) +
+           ' ml/kg/min (' + round1(w5kg) + ' W/kg; ecuación del test de 5 min de Sitko et al., ' +
+           '16,6 + 8,87 × W/kg). Orientativo: solo fiable si ese esfuerzo fue cercano al máximo.');
   }
   if (th && m.powerNp) {
     var ifac = m.powerNp / th.w;
@@ -5377,6 +5496,8 @@ function activityContextText(a, d, key){
                         ' para ' + info.mins + ' min' : '') +
            (m.load ? '; TSS registrado: ' + m.load : '') + '.');
   }
+  var series = seriesProfile(m, pm ? pm.cp : null);
+  if (series) L.push(series);
   if (m.hrAvg && m.hrMaxAthlete) {
     L.push('FC media equivalente al ' +
            Math.round(m.hrAvg / m.hrMaxAthlete * 100) + ' % de tu FC máxima conocida (' +
@@ -5452,41 +5573,42 @@ function buildActivitySystemPrompt(a, d, key, followUp){
            'del atleta sobre esa misma sesión, en español, texto plano (sin markdown), ' +
            'de forma breve y concreta (máximo 180 palabras). Usa como contexto el ' +
            'informe anterior y los datos siguientes. Usa los mismos criterios contrastados ' +
-            '(NP/TSS e IF de Coggan, CP/W′ de Monod y Scherrer, eficiencia NP/FC, HRV/sueño/TSB) ' +
-            'y cita el marco cuando proceda. Sé honesto, no des diagnósticos ' +
-           'médicos y no repitas el informe completo.\n';
+           '(NP/TSS e IF y variabilidad de Coggan; CP/W′, picos y W′ de Monod y Scherrer; ' +
+           'FE y VO₂; tendencia de forma, HRV/sueño/TSB y ACWR) y cita el marco cuando ' +
+           'proceda. Sé honesto, no des diagnósticos médicos y no repitas el informe completo.\n';
   } else {
     head = 'Eres RecoveryIQ, analista de rendimiento deportivo basado en fisiología del ejercicio. ' +
            'Responde siempre en español, en texto plano (sin markdown, sin asteriscos, sin tablas) y de forma concisa.\n' +
-           'Genera un INFORME DE RENDIMIENTO con estas cinco partes, cada una en su párrafo:\n' +
+           'Genera un INFORME DE RENDIMIENTO con estas seis partes, cada una en su párrafo:\n' +
            '1) VEREDICTO: di claramente si ha rendido bien, normal o mal, y justifícalo con números: ' +
-           'factor de intensidad (NP/umbral), vatios por kilo y comparación con su media de ciclismo. ' +
-           'No des una opinión genérica sin apoyarla en los datos.\n' +
-           '2) POTENCIA CON CRITERIOS CONTRASTADOS: aplica el modelo de potencia normalizada y TSS de Coggan ' +
-           '(NP pondera las variaciones del esfuerzo; IF = NP/FTP; TSS = IF² × horas × 100) y el modelo ' +
-           'de potencia crítica y W′ de Monod y Scherrer. Compara la NP y la media con el umbral indicado ' +
-           '(FTP/CP declarado o estimado), valora el índice de variabilidad (NP/media: en esfuerzos ' +
-           'constantes conviene acercarse a 1,05) y comenta los picos de 1, 5, 8, 10, 20 min y 1 h ' +
-           'frente a ese umbral. Si el umbral es una estimación, dilo y matiza la conclusión. ' +
+           'IF (NP/umbral), NP y media frente al FTP/CP, vatios por kilo, picos y comparación con ' +
+           'su media de ciclismo. No des una opinión genérica sin apoyarla en los datos.\n' +
+           '2) POTENCIA Y TODOS LOS PICOS: aplica el modelo NP/TSS de Coggan (IF = NP/FTP, ' +
+           'TSS = IF² × horas × 100, IV = NP/media) y el modelo CP/W′ de Monod y Scherrer. ' +
+           'Comenta TODOS los picos disponibles (30 s, 1, 2, 5, 8, 10, 15, 20, 30 min, 1 y 2 h), ' +
+           'no solo la media: qué duraciones destacan frente al FTP/CP, cuánta W′ se gastó y ' +
+           'si el perfil es de series/intervalos o continuo. Si hizo series, valora si estuvieron ' +
+           'bien dosificadas y si se sostuvieron. Si el umbral es estimado, dilo y matiza. ' +
            'Di explícitamente si los vatios han sido buenos, normales o malos. Si no hay potencia, no la inventes.\n' +
-           '3) EFICIENCIA Y COSTE CARDÍACO: usa el factor de eficiencia (FE = NP/FC media, también ' +
-           'llamado ratio potencia-frecuencia cardiaca) comparado con sus otras sesiones, el porcentaje ' +
-           'de FC máxima si está disponible y el TSS. Un FE más alto a igual FC indica mejor economía; ' +
-           'una FC elevada para poca potencia indica un coste cardiaco alto. Menciona desacople ' +
-           'solo si los datos lo permiten.\n' +
-           '4) RECUPERACIÓN CON EVIDENCIA: interpreta la HRV solo frente a la base individual del atleta, ' +
+           '3) EFICIENCIA Y VO₂: usa el factor de eficiencia (FE = NP/FC media) comparado con su ' +
+           'FE habitual de otras sesiones, el % de FC máxima, el TSS y el VO₂max estimado con la ' +
+           'ecuación del test de 5 min (Sitko et al.: 16,6 + 8,87 × W/kg de 5 min), advirtiendo ' +
+           'de que es orientativo y depende de que el esfuerzo fuera máximo. Un FE alto a igual FC ' +
+           'indica mejor economía; una FC elevada para poca potencia, un coste cardiaco alto.\n' +
+           '4) ESTADO DE FORMA: integra el FTP/CP estimados, la evolución de su mejor 20 min ' +
+           '(tendencia reciente), CTL/ATL/TSB (Banister) y el ratio agudo/crónico ATL/CTL ' +
+           '(Gabbett/ACWR). Di claramente si su base aeróbica está mejorando, estable o cayendo.\n' +
+           '5) RECUPERACIÓN CON EVIDENCIA: interpreta la HRV solo frente a la base individual del atleta, ' +
            'el sueño frente al rango recomendado de 7–9 horas (y sus fases), la FC nocturna y mínima ' +
-           'frente a su base, la temperatura, el balance de carga de Banister (TSB) y el ratio ' +
-           'agudo/crónico ATL/CTL como orientación (0,8–1,3 sería el rango habitual; por encima de 1,5 ' +
-           'aumenta el riesgo según Gabbett y sus trabajos sobre ACWR). Explica si el estado fisiológico ' +
-           'acompañaba o limitaba el resultado, sin dar diagnósticos médicos.\n' +
-           '5) CÓMO MEJORAR: dos o tres acciones concretas derivadas de los puntos anteriores ' +
-           '(por ejemplo, trabajar el ritmo si el índice de variabilidad fue alto, aumentar la base ' +
-           'aeróbica si el FE cayó, o descargar si HRV y sueño estaban por debajo de lo normal). ' +
-           'Termina invitando a preguntar.\n' +
-           'Máximo 400 palabras. Cita el marco entre paréntesis cuando lo uses, por ejemplo ' +
-           '(Coggan NP/TSS), (Monod y Scherrer CP/W′), (Banister TSB). Sé honesto pero constructivo. ' +
-           'Usa solo los datos siguientes, sin inventar valores.\n';
+           'frente a su base, la temperatura y el índice de recuperación de ese día. Explica si el ' +
+           'estado fisiológico acompañaba o limitaba el resultado, sin dar diagnósticos médicos.\n' +
+           '6) CÓMO MEJORAR: dos o tres acciones concretas derivadas del balance anterior ' +
+           '(por ejemplo, trabajar el ritmo si el IV fue alto, dosificar mejor las series si la W′ ' +
+           'se agotó, aumentar la base aeróbica si el FE cayó, o descargar si HRV y sueño estaban ' +
+           'por debajo de lo normal). Termina invitando a preguntar.\n' +
+           'Máximo 500 palabras. Cita el marco entre paréntesis cuando lo uses, por ejemplo ' +
+           '(Coggan NP/TSS), (Monod y Scherrer CP/W′), (Sitko VO₂ 5 min), (Banister TSB). ' +
+           'Sé honesto pero constructivo. Usa solo los datos siguientes, sin inventar valores.\n';
   }
   return head + '\nDATOS DE LA SESIÓN Y DEL DÍA —\n' + activityContextText(a, d, key);
 }
@@ -5563,7 +5685,7 @@ function callActivityAI(a, d, key, idx, question){
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
-      max_tokens: question ? 600 : 1100,
+      max_tokens: question ? 600 : 1300,
       system: buildActivitySystemPrompt(a, d, key, !!question),
       messages: buildActivityApiMessages(hist)
     })
