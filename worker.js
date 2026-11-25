@@ -556,9 +556,86 @@ async function garminRefresh(refreshToken, clientId) {
   return { error: 'REFRESH_FAILED' };
 }
 
+/* Picos que calcula el worker cuando la fuente es Garmin: el listado de
+ * actividades NO trae los mejores esfuerzos. Se pide /details de la sesión y
+ * se derivan de la serie de vatios, igual que haría la curva de Intervals. */
+const GARMIN_PEAK_SECS = [30, 60, 120, 300, 480, 600, 900, 1200, 1800, 3600, 7200];
+const GARMIN_PEAK_KEYS = {
+  30: '30s', 60: '1m', 120: '2m', 300: '5m', 480: '8m', 600: '10m',
+  900: '15m', 1200: '20m', 1800: '30m', 3600: '1h', 7200: '2h',
+};
+
+/** Los detalles de Garmin guardan la potencia en `activityDetailMetrics`,
+ *  con el índice de cada canal en `metricDescriptors` (directPower, watts…).
+ *  Devuelve { '1m': W, '5m': W, … } o null si no hay serie de potencia. */
+function garminPeakPowers(detail) {
+  if (!detail || typeof detail !== 'object') return null;
+  const idx = {};
+  for (const d of (Array.isArray(detail.metricDescriptors) ? detail.metricDescriptors : [])) {
+    if (!d || typeof d !== 'object') continue;
+    const i = Number(d.metricsIndex);
+    if (!Number.isFinite(i) || i < 0) continue;
+    idx[String(d.key || '')] = i;
+  }
+  const keys = Object.keys(idx);
+  const powerKey = keys.find(k => /^(direct)?power$/i.test(k)) ||
+                   keys.find(k => /power|watt/i.test(k));
+  const powerIdx = powerKey ? idx[powerKey] : -1;
+  const durKeys = ['sumDuration', 'sumElapsedDuration', 'sumMovingDuration'];
+  const samples = [];
+  for (const row of (Array.isArray(detail.activityDetailMetrics)
+    ? detail.activityDetailMetrics : [])) {
+    const m = (row && Array.isArray(row.metrics)) ? row.metrics : null;
+    if (!m) continue;
+    let t = null;
+    for (const k of durKeys) {
+      if (idx[k] !== undefined && Number.isFinite(Number(m[idx[k]]))) {
+        t = Number(m[idx[k]]);
+        break;
+      }
+    }
+    if (t === null && Number.isFinite(Number(m[0]))) t = Number(m[0]);
+    if (t === null || t <= 0) continue;
+    if (t > 86400) t = t / 1000;          // Garmin manda milisegundos
+    let w = powerIdx >= 0 ? Number(m[powerIdx]) : NaN;
+    if (!Number.isFinite(w)) w = Number(row.power ?? row.watts ?? row.directPower);
+    if (!Number.isFinite(w) || w <= 0) continue;
+    samples.push({ t, w });
+  }
+  samples.sort((a, b) => a.t - b.t);
+  if (samples.length < 2) return null;
+
+  // Intervalo de muestreo mediano: con él se traducen los segundos pedidos a
+  // número de muestras (la serie suele venir a 1 s, pero puede ir diezmada).
+  const dts = [];
+  for (let i = 0; i < samples.length - 1; i++) {
+    const dt = samples[i + 1].t - samples[i].t;
+    if (dt > 0 && dt < 120) dts.push(dt);
+  }
+  if (!dts.length) return null;
+  dts.sort((a, b) => a - b);
+  const dt = dts[Math.floor(dts.length / 2)];
+  if (!dt || dt <= 0) return null;
+
+  const pfx = [0];
+  for (const s of samples) pfx.push(pfx[pfx.length - 1] + s.w);
+  const out = {};
+  for (const sec of GARMIN_PEAK_SECS) {
+    const n = Math.max(2, Math.round(sec / dt));
+    if (samples.length < n) continue;       // la sesión duró menos: sin dato
+    let best = 0;
+    for (let l = 0; l + n <= samples.length; l++) {
+      const avg = (pfx[l + n] - pfx[l]) / n;
+      if (avg > best) best = avg;
+    }
+    if (best > 0) out[GARMIN_PEAK_KEYS[sec]] = Math.round(best);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 /** Trae los datos que necesita la app (5 + trozos de sueño + 14 días de
- *  temperatura + FC intradía y pasos de HOY; límite del plan Free: 50
- *  peticiones por invocación → 25 con un rango de 60 días). */
+ *  temperatura + FC intradía y pasos de HOY + detalle de picos de hasta 6
+ *  sesiones; límite del plan Free: 50 peticiones por invocación). */
 async function garminSync(body) {
   const start = String(body.start || '');
   const end = String(body.end || '');
@@ -767,6 +844,66 @@ async function garminSync(body) {
   const sleep = [];
   for (let i = 0; i < sleepChunks.length; i++) sleep.push(await jsonOf(core[5 + i], null));
 
+  // CUARTA TANDA — detalle de picos. Garmin NO trae los mejores esfuerzos en
+  // el listado: hay que pedir /details de cada sesión de ciclismo con potencia
+  // y calcularlos de la serie de vatios. Máximo 6 peticiones y aislada: si
+  // Garmin la bloquea, la app sigue recibiendo todo lo demás.
+  const activityDetails = {};
+  const peakStat = [];
+  const peakTargets = [];
+  {
+    const rows = Array.isArray(activities) ? activities
+      : (activities && Array.isArray(activities.activities) ? activities.activities : []);
+    for (const a of rows) {
+      const s = (a && (a.summaryDTO || a.summary || a)) || {};
+      const type = String((a && ((a.activityType && a.activityType.typeKey) || a.type)) || '').toLowerCase();
+      const name = String((a && (a.activityName || a.name)) || '').toLowerCase();
+      const cycling = /cycl|bike|ride/.test(type) || /cicl|bici|rodillo|mtb|ride|bike/.test(name);
+      const powered = [s.avgPower, s.averagePower, s.normalizedPower, s.maxPower, s.power]
+        .some(v => Number(v) > 0);
+      if (!cycling || !powered) continue;
+      const id = a.activityId || a.summaryId;
+      if (id === undefined || id === null || activityDetails[id]) continue;
+      peakTargets.push(id);
+      if (peakTargets.length >= 6) break;
+    }
+  }
+  const numOr = (...xs) => {
+    for (const x of xs) {
+      const n = Number(x);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return null;
+  };
+  for (const id of peakTargets) {
+    const r = await get('/activity-service/activity/' + encodeURIComponent(String(id)) +
+      '/details?maxChartSize=5000&maxPolylineSize=0').catch(() => null);
+    peakStat.push((r && r.status) || 0);
+    const j = await jsonOf(r, null);
+    const peaks = garminPeakPowers(j);
+    if (!peaks) continue;
+    const s = (j && (j.summaryDTO || j.summary)) || {};
+    const out = {};
+    for (const sec of GARMIN_PEAK_SECS) {
+      if (peaks[GARMIN_PEAK_KEYS[sec]]) {
+        out['peak_power_' + GARMIN_PEAK_KEYS[sec]] = peaks[GARMIN_PEAK_KEYS[sec]];
+      }
+    }
+    const declared = {
+      avg_power: numOr(s.avgPower, s.averagePower),
+      normalized_power: numOr(s.normalizedPower, s.normPower, s.weightedAveragePower),
+      max_power: numOr(s.maxPower, s.maxWatts),
+      icu_intensity: numOr(s.intensityFactor, s.intensity),
+      icu_efficiency_factor: numOr(s.efficiencyFactor),
+      icu_max_wbal_depletion: numOr(s.maxWbalDepletion),
+      intervalDetail: (j && (j.lapsDTOs || j.intervals)) || null,
+    };
+    for (const k of Object.keys(declared)) {
+      if (declared[k] !== null && declared[k] !== undefined) out[k] = declared[k];
+    }
+    activityDetails[id] = out;
+  }
+
   // Si el endpoint por rango no ha traído NI UN día de sueño, se reintenta con
   // el endpoint de un solo día (el que usa python-garminconnect: get_sleep_data)
   // para las últimas 2 semanas. Solo en ese caso, para no inflar peticiones.
@@ -835,6 +972,9 @@ async function garminSync(body) {
              k: kindOf(summary),
              n: (summary && typeof summary.totalSteps === 'number') ? 1 : 0 },
     sleepRangeRows,
+    // Detalle de picos: cuántas sesiones han podido calcularse y estado HTTP.
+    peaks: { s: peakStat[peakStat.length - 1] || 0,
+             n: Object.keys(activityDetails).length },
   };
   if (sleepDay.length) diag.sleepDay = sleepDay;
 
@@ -846,7 +986,8 @@ async function garminSync(body) {
     start,
     end,
     diag,
-    data: { hrv, rhr, load, sleep, activities, weight, temp, hrday, summary },
+    data: { hrv, rhr, load, sleep, activities, weight, temp, hrday, summary,
+            activityDetails },
   });
 }
 

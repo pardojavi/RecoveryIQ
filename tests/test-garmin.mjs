@@ -240,6 +240,32 @@ ok(acts.length > 0, 'hay actividades', acts.length);
 eq(acts[0].name.indexOf('Ciclismo'), 0, 'nombre de la actividad');
 ok(/^\d{4}-\d{2}-\d{2} /.test(acts[0].start_date), 'start_date con fecha', acts[0].start_date);
 
+console.log('\n== Garmin: picos del detalleFusionados en la actividad ==');
+w.__payloadPeaks = makePayload({ days: 2 });
+w.__payloadPeaks.activities = [{
+  activityId: 777, activityName: 'Ciclismo con picos',
+  startTimeLocal: dayKey(0) + ' 08:00:00',
+  activityType: { typeKey: 'cycling' }, duration: 1500,
+}];
+w.__payloadPeaks.activityDetails = {
+  '777': {
+    peak_power_30s: 410, peak_power_1m: 400, peak_power_2m: 360,
+    peak_power_5m: 320, peak_power_8m: 310, peak_power_10m: 308,
+    peak_power_15m: 306, peak_power_20m: 305, peak_power_30m: 300,
+    peak_power_1h: 290, peak_power_2h: 280,
+    avg_power: 300, normalized_power: 310, max_power: 430,
+    icu_intensity: 0.95, icu_efficiency_factor: 1.7,
+  },
+};
+const peaked = run('garminActivities(window.__payloadPeaks)[0]');
+eq(peaked.peak_power_1m, 400, 'el pico de 1 min del detalle llega a la actividad');
+eq(peaked.peak_power_5m, 320, 'y el de 5 min');
+eq(run('actPerf(garminActivities(window.__payloadPeaks)[0]).peaks[1200]'), 305,
+   'actPerf() ve el pico de 20 min como en Intervals.icu');
+eq(peaked.icu_intensity, 0.95, 'el IF declarado por Garmin también se conserva');
+eq(run('garminDiag({diag:{peaks:{s:200,n:1}},start:"",end:""},[],[]).peaks.n'), 1,
+   'el diagnóstico expone cuántas sesiones tienen picos');
+
 console.log('\n== Garmin: assembleData() con fases REALES ==');
 const gd = run('(function(){var r=garminToRows(window.__payload); return assembleData(r, garminActivities(window.__payload));})()');
 ok(!!gd, 'assembleData no devuelve null');

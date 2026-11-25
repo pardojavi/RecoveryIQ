@@ -60,6 +60,26 @@ const J = (obj, status) => new ShimResponse(JSON.stringify(obj), {
   status: status || 200, headers: { 'content-type': 'application/json' },
 });
 
+/* Detalle REAL de Garmin: los vatios van en activityDetailMetrics con el
+ * índice del canal en metricDescriptors. 25 min a 300 W con 1 min a 400 W. */
+function garminDetailFixture() {
+  const descriptors = [
+    { key: 'sumDuration', metricsIndex: 0 },
+    { key: 'directHeartRate', metricsIndex: 1 },
+    { key: 'directPower', metricsIndex: 2 },
+  ];
+  const rows = [];
+  for (let i = 0; i < 1500; i++) {
+    rows.push({ metrics: [i + 1, 140, (i >= 100 && i < 160) ? 400 : 300] });
+  }
+  return {
+    activityId: 111,
+    metricDescriptors: descriptors,
+    activityDetailMetrics: rows,
+    summaryDTO: { avgPower: 302, normalizedPower: 310, intensityFactor: 0.94 },
+  };
+}
+
 function respond(u, o) {
   if (u.indexOf('diauth.garmin.com') >= 0) {
     return J({ access_token: 'aaa.bbb.ccc', refresh_token: 'rt-nuevo' });
@@ -90,7 +110,17 @@ function respond(u, o) {
   }
   if (u.indexOf('userstats-service') >= 0) return o.coreStatus !== 200 ? J({}, o.coreStatus) : J({ metricList: [{}] });
   if (u.indexOf('fitnessstats-service') >= 0) return o.coreStatus !== 200 ? J({}, o.coreStatus) : J({ activityTrainingLoad: [{}] });
-  if (u.indexOf('activitylist-service') >= 0) return o.coreStatus !== 200 ? J([], o.coreStatus) : J([]);
+  if (u.indexOf('/activity-service/activity/') >= 0) {
+    if (o.peakStatus !== 200) return J({ message: 'denied' }, o.peakStatus || 404);
+    return J(garminDetailFixture());
+  }
+  if (u.indexOf('activitylist-service') >= 0) {
+    if (o.coreStatus !== 200) return J([], o.coreStatus);
+    return J(o.withRide ? [{
+      activityId: 111, activityName: 'Rodillo',
+      activityType: { typeKey: 'cycling' }, summaryDTO: { avgPower: 280 },
+    }] : []);
+  }
   if (u.indexOf('weight-service') >= 0) return o.coreStatus !== 200 ? J({}, o.coreStatus) : J({ dateWeightList: [] });
   if (u.indexOf('/sleep-service/stats/sleep/daily/') >= 0) {
     // Filas REALES: si el rango no trae ninguna, el worker cae en el fallback
@@ -109,9 +139,10 @@ function harness(o) {
     const isTemp = u.indexOf('dailySleepData') >= 0;
     const isDay = u.indexOf('dailyHeartRate') >= 0 ||
                   u.indexOf('usersummary-service') >= 0;
+    const isDetail = u.indexOf('/activity-service/activity/') >= 0;
     // "núcleo" = las peticiones que la app necesita: las 5 + los trozos de sueño.
-    // Se excluyen el token de Garmin, el perfil y el avance del día, que van aparte.
-    const isCore = !isTemp && !isDay &&
+    // Se excluyen el token, el perfil, el avance del día y el detalle de picos.
+    const isCore = !isTemp && !isDay && !isDetail &&
       u.indexOf('diauth.garmin.com') < 0 &&
       u.indexOf('userprofile-service') < 0;
     st.calls.push(u);
@@ -135,7 +166,8 @@ function harness(o) {
 async function sync(opts) {
   // Normaliza: sin esto, `o.coreStatus !== 200` sería cierto cuando la opción
   // no existe y los fixtures devolverían cuerpos vacíos.
-  const o = Object.assign({ coreStatus: 200, tempStatus: 200, dayStatus: 200 }, opts || {});
+  const o = Object.assign({ coreStatus: 200, tempStatus: 200, dayStatus: 200,
+                            peakStatus: 200 }, opts || {});
   const st = harness(o);
   const r = await worker.fetch(new ShimRequest('https://proxy.example/garmin', {
     method: 'POST',
@@ -153,6 +185,9 @@ const TEMP_CALLS = (st) => st.calls.filter(u => u.indexOf('dailySleepData') >= 0
 const DAY_CALLS = (st) => st.calls.filter(u =>
   u.indexOf('dailyHeartRate') >= 0 ||
   u.indexOf('usersummary-service') >= 0).length;
+// Detalle de sesiones: petición aparte para calcular los picos de potencia.
+const DETAIL_CALLS = (st) => st.calls.filter(u =>
+  u.indexOf('/activity-service/activity/') >= 0).length;
 // Núcleo = las 5 peticiones fijas + los trozos de sueño. El token de Garmin,
 // el perfil y el avance del día van aparte: no son datos del índice histórico.
 const CORE_CALLS = (st) => st.calls.filter(u =>
@@ -259,6 +294,38 @@ console.log('\n== El avance del día llega y su bloqueo no rompe nada ==');
   eq(body.diag.steps.s, 403, 'y 403 en pasos');
   eq(body.data.hrday, null, 'sin serie de FC…');
   eq(body.data.summary, null, 'y sin pasos, pero sin romper nada');
+}
+
+/* ================= 8. Picos de Garmin desde el detalle ================= */
+console.log('\n== El detalle de la sesión de ciclismo aporta los picos ==');
+{
+  const { status, body, st } = await sync({ withRide: true });
+  eq(status, 200, 'la sincronización responde 200');
+  eq(body.ok, true, 'ok:true');
+  eq(DETAIL_CALLS(st), 1, 'una petición de detalle para una sesión con potencia');
+  ok(st.calls.some(u => u.indexOf('/activity/111/details?maxChartSize=') >= 0),
+     'pide /activity/{id}/details', st.calls.filter(u => u.indexOf('activity-service') >= 0));
+  const det = body.data.activityDetails && body.data.activityDetails['111'];
+  ok(!!det, 'el detalle llega en data.activityDetails');
+  eq(det && det.peak_power_30s, 400, 'pico de 30 s desde la serie de vatios');
+  eq(det && det.peak_power_1m, 400, 'pico de 1 min');
+  eq(det && det.peak_power_5m, 320, 'pico de 5 min (400 W × 60 s + 300 W × 240 s)');
+  eq(det && det.peak_power_20m, 305, 'pico de 20 min');
+  eq(det && det.peak_power_30m, undefined, 'sin pico de 30 min en una sesión de 25 min');
+  eq(det && det.normalized_power, 310, 'se conserva la potencia normalizada declarada');
+  eq(det && det.icu_intensity, 0.94, 'y el factor de intensidad declarado');
+  eq(body.diag.peaks && body.diag.peaks.n, 1, 'el diagnóstico cuenta 1 sesión con picos');
+  eq(body.diag.peaks && body.diag.peaks.s, 200, 'y el HTTP del detalle');
+  ok(st.total <= 50, 'sigue por debajo del límite de 50 peticiones', st.total);
+}
+{
+  const { status, body } = await sync({ withRide: true, peakStatus: 403 });
+  eq(status, 200, 'si Garmin bloquea el detalle, la sync sigue viva');
+  eq(body.ok, true, 'ok:true');
+  ok(!!body.data.hrv, 'el núcleo llega igual');
+  eq(body.data.activityDetails['111'], undefined, 'esa sesión se queda sin picos');
+  eq(body.diag.peaks.s, 403, 'el diagnóstico lo refleja');
+  eq(body.diag.peaks.n, 0, 'y no cuenta ninguna sesión con picos');
 }
 
 /* --------------------------------------- */

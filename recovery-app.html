@@ -3018,6 +3018,8 @@ function garminDiag(r, rows, acts){
     rhr:  (d && d.rhr)  || null,
     load: (d && d.load) || null,
     act:  (d && d.acts) || null,
+    // Picos de Garmin calculados del detalle de la sesión (cuántas y HTTP)
+    peaks: (d && d.peaks) || null,
     weight: (d && d.weight) || null,
     temp: (d && d.temp) || null,
     // Avance del d&#237;a: dos endpoints m&#225;s, solo para hoy (el n&#250;mero que
@@ -3750,6 +3752,9 @@ function garminSecs(v){
 /* Actividades de Garmin al formato que consume assembleData */
 function garminActivities(g){
   var src = recordsOf(g && g.activities), out = [], i;
+  // El worker manda aparte el detalle con los picos calculados de la serie de
+  // vatios (Garmin no los da en el listado). Se fusiona por id de actividad.
+  var detMap = (g && g.activityDetails) || {}, det, k;
   for (i = 0; i < src.length; i++) {
     var a = src[i];
     if (!a || typeof a !== 'object') continue;
@@ -3762,7 +3767,7 @@ function garminActivities(g){
     // El detalle de Garmin mete las métricas en summaryDTO; el listado las
     // trae sueltas. Se aceptan las dos formas para no perder ninguna.
     var s = a.summaryDTO || a.summary || {};
-    out.push({
+    var item = {
       name:        a.activityName || a.name ||
                    (a.activityType && a.activityType.typeKey) || 'Actividad',
       start_date:  when,
@@ -3816,7 +3821,16 @@ function garminActivities(g){
       calories:          a.calories || s.calories || null,
       icu_training_load: a.trainingLoad || a.activityTrainingLoad ||
                          s.trainingLoad || null
-    });
+    };
+    det = detMap[String(a.activityId || a.summaryId)] || null;
+    if (det) {
+      for (k in det) {
+        if (det.hasOwnProperty(k) && det[k] !== null && det[k] !== undefined) {
+          item[k] = det[k];
+        }
+      }
+    }
+    out.push(item);
   }
   return out;
 }
@@ -5568,7 +5582,9 @@ function renderSettings(){
         (dg.todaySteps ? ' &#183; hoy <b>' + dg.todaySteps + '</b> pasos'
                        : ' &#183; hoy sin dato');
       if ($('diag-acts')) $('diag-acts').innerHTML =
-        (dg.actsCount || 0) + ' &#183; ' + diagCell(dg.act);
+        (dg.actsCount || 0) + ' &#183; ' + diagCell(dg.act) +
+        (dg.peaks ? ' &#183; picos <b>' + (dg.peaks.n || 0) + '</b>' +
+          (dg.peaks.n ? '' : ' (sin serie de vatios)') : '');
     }
   }
 }

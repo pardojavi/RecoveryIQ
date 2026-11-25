@@ -496,9 +496,18 @@ ciclismo con potencia (máximo 12) la app pide, de forma secuencial:
   inicio y fin. El primero es el pico y los siguientes delatan si hubo series.
 
 Cada petición es independiente: si una falla, las demás se conservan y el resto
-de los datos sigue cargando igual. Con Garmin no hacen falta peticiones extra:
-el mismo mapeo `garminActivities()` lee también `summaryDTO`, los picos de
-30 s a 2 h, `bestEfforts`, los intervalos y las métricas declaradas.
+de los datos sigue cargando igual.
+
+Con **Garmin Connect** el listado de actividades tampoco trae los picos, así
+que `worker.js` pide `/activity-service/activity/{id}/details` para las sesiones
+de ciclismo con potencia (hasta 6, en una tanda aislada) y calcula los once
+mejores esfuerzos de la serie de vatios (`directPower`/`watts`, con el índice
+de canal de `metricDescriptors`). Devuelve el resultado en
+`data.activityDetails`, junto con las métricas declaradas en `summaryDTO`; la
+app lo fusiona en `garminActivities()` y la IA lo ve igual que en Intervals.icu.
+Si el detalle falla, la sincronización sigue funcionando y Ajustes lo indica en
+la fila de actividades. **Este cambio está en `worker.js`: hay que volver a
+desplegar el Worker (§4.3) para que la app lo use.**
 
 El calendario va de **lunes a domingo**; el detalle de cada día se sigue
 abriendo igual al tocar una casilla con datos.
@@ -758,7 +767,7 @@ si solo ha caducado el token de Garmin (`REFRESH_FAILED`), **no** se borra nada
 ## 9. Verificación
 
 Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
-(**713 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
+(**739 aserciones, 0 fallos**, 0 errores en tiempo de ejecución). Están en
 `tests/` (`npm install` y `npm test`, que las corre todas).
 
 ### `test-smoke.mjs` — 167 aserciones
@@ -790,7 +799,7 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
 - **Pestaña Evolución**: SVG de la curva, desglose con sus filas, avisos cuando
   no hay sesiones y nota de que es una estimación.
 
-### `test-garmin.mjs` — 362 aserciones
+### `test-garmin.mjs` — 367 aserciones
 
 - **Normalizador `garminToRows()`**: 60 filas, HRV, FC en reposo, sueño en horas
   con 1 decimal, y las 4 fases reales sumando exactamente el total.
@@ -840,6 +849,9 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
 - Conexión completa: login, ida y vuelta de **MFA** (sin mandar la contraseña en
   el segundo paso) y cierre de sesión.
 - `restoreSession()` con config de Garmin válida / incompleta / de Intervals.
+- `activityDetails` del worker fusionado en `garminActivities()`: picos de
+  30 s–2 h visibles en `actPerf()`, IF/FE declarados y diagnóstico con el
+  número de sesiones con picos.
 
 ### `test-calendar-ai.mjs` — 135 aserciones
 
@@ -876,7 +888,7 @@ Cuatro suites de jsdom sobre `recovery-app.html` y sobre `worker.js`
 - Las cuatro suites leen el HTML desde la carpeta del proyecto mediante
   `fileURLToPath`, sin rutas absolutas cableadas.
 
-### `test-worker.mjs` — 49 aserciones
+### `test-worker.mjs` — 70 aserciones
 
 La temperatura hay que pedirla día a día (`dailySleepData`) y Garmin la limita o
 la bloquea con facilidad, así que el worker la lanza en una **segunda tanda
@@ -894,9 +906,14 @@ respete:
 - El **avance del día** va en una **tercera tanda** (2 peticiones, solo para
   hoy): llega con la serie de FC y los pasos intactos, y con **403** la sync
   sigue respondiendo `ok:true`, `diag.hrday.s = 403` y `data.hrday = null`.
-- Presupuesto: 26 peticiones en total (token + perfil + 8 de núcleo + 14 de
-  temperatura + 2 del avance del día), siempre por debajo del límite de 50 del
-  plan Free, sin peticiones fantasma.
+- El **detalle de picos** va en una **cuarta tanda** (1 petición por sesión de
+  ciclismo con potencia, máximo 6): de una serie real de 25 min a 300 W con
+  1 min a 400 W calcula 30 s/1 min = 400 W, 5 min = 320 W y 20 min = 305 W;
+  no inventa el pico de 30 min. Con **403** la sync sigue viva y el
+  diagnóstico dice `peaks.s = 403` y `peaks.n = 0`.
+- Presupuesto: 26 peticiones sin sesiones con potencia (token + perfil + 8 de
+  núcleo + 14 de temperatura + 2 del avance del día), siempre por debajo del
+  límite de 50 del plan Free, sin peticiones fantasma.
 
 Además, `node --check` sobre el bloque `<script>` del HTML y sobre `worker.js`.
 
